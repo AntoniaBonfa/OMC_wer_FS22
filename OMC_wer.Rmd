@@ -1,0 +1,75 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+library(tidyverse)
+data <- read.csv("C:/Users/Antonia/Downloads/swissvotes.csv", header=TRUE, sep=";", na = c("NA", "."))
+```
+
+
+```{r}
+data_wer <- data %>%
+  select(datum, titel_off_d, anzahl, rechtsform, d1e1:br.pos, bv.pos:srnein, unter.quorum, unter_g, unter_u, p.fdp:p.bpuk, w.fdp:neutral.summe, volk:ktjaproz) %>%
+  mutate(datum = as.Date(datum, "%d.%m.%Y"))
+
+mai <- data_wer %>%
+  filter(datum > as.Date("01.05.2022", "%d.%m.%Y" )) %>%
+  select(d1e3, d2e3, d3e3)
+
+themen <- unique(themen[!is.na(unlist(mai))]) #Liste aller Themen die von den Mai Abstimmungen betroffen sind
+
+```
+
+```{r}
+data_neu <- data_wer %>%
+  filter(d1e3|d2e3|d3e3 %in% themen) %>%
+  select_if(~sum(!is.na(.)) > 0) %>% #nur Spalten wählen, die nicht zu 100% NAs sind
+  rowwise() %>%
+  mutate(alle_kat = list(c(d1e3,  d2e3,  d3e3))) %>%
+  mutate(alle_kat = list(alle_kat[!is.na(alle_kat)]))
+```
+
+
+```{r}
+positionen  <- data_wer %>%
+  select(ends_with(".pos")|starts_with("p.")|starts_with("pdev")) 
+
+hauptthema <- data_wer %>%
+  select(d1e1, d2e1 ,d3e1)
+
+unterthema <- data_wer %>%
+  select(d1e2, d2e2 ,d3e2)
+
+daten <- data_wer %>%
+  select(datum, starts_with("dat."))
+
+resultate <- data_wer %>%
+  select(ends_with("annahme")| volk | stand)
+
+data_neu <- data_neu %>%
+    mutate(rechtsform = factor(case_when(
+    rechtsform == 1 ~ "Obligatorisches Referendum",
+    rechtsform == 2 ~ "Fakultatives Referendum",
+    rechtsform == 3 ~ "Volksinitiative",
+    rechtsform == 4 ~ "Gegenentwurf zu Volksinitiative",
+    rechtsform == 5 ~ "Stichfrage")))%>% 
+  
+  mutate(across(names(positionen), 
+           ~ factor(case_when(. == 1 ~ "Befürwortend",
+    .== 2 ~"Ablehnend",
+    .== 3 ~"Keine",
+    .== 8 ~"Vorzug für den Gegenentwurf",
+    .== 9 ~"Vorzug für Volksinitiative",)))) %>%
+  
+  mutate(across(names(resultate), 
+                ~ factor(case_when(. == 0 ~"abgelehnt", 
+                .== 1 ~ "angenommen", 
+                .== 3 ~ "Ständemehr nicht nötig", 
+                .== 8 ~ "Gegenentwurf angenommen", 
+                .== 9 ~ "Volksinitiative angenommen" )))) 
+
+```
+
+
