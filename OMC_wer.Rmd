@@ -1,75 +1,173 @@
 ---
-title: "R Notebook"
+title: "Mini Challenge wer: Vorhersage Abstimmungen Mai"
 output: html_notebook
 ---
 
 ```{r}
+#Bibliotheken importieren
 library(tidyverse)
-data <- read.csv("C:/Users/Antonia/Downloads/swissvotes.csv", header=TRUE, sep=";", na = c("NA", "."))
+library(plotly)
+library(esquisse)
+library(highcharter)
+library(formattable)
+
 ```
 
 
 ```{r}
-data_wer <- data %>%
-  select(datum, titel_off_d, anzahl, rechtsform, d1e1:br.pos, bv.pos:srnein, unter.quorum, unter_g, unter_u, p.fdp:p.bpuk, w.fdp:neutral.summe, volk:ktjaproz) %>%
-  mutate(datum = as.Date(datum, "%d.%m.%Y"))
+#Datensatz einlesen
+df <- read.csv("https://swissvotes.ch/page/dataset/swissvotes_dataset.csv", header=TRUE, sep=";", na = c("NA", "."))
+```
 
-mai <- data_wer %>%
+```{r}
+parteien <- c(".svp", ".fdp", ".sps", ".cvp", ".gps", ".mitte")
+
+#Daten selektieren
+df <- df %>%
+  select(datum, titel_off_d, anzahl, rechtsform, d1e1:br.pos, bv.pos:srnein, unter.quorum, unter_g, unter_u, ends_with(parteien), ja.lager:neutral.summe, volk:ktjaproz) %>%
+  mutate(datum = as.Date(datum, "%d.%m.%Y")) %>% 
+  mutate(p.cvp = ifelse(p.cvp == 9999, p.mitte, p.cvp))%>% #CVP wurde zu Mitte -> fehlende Daten cvp durch Daten der Mitte ergänzt
+  mutate(w.cvp = ifelse(w.cvp == 0, w.mitte, w.cvp))%>%  #CVP wurde zu Mitte -> fehlende Daten cvp durch Daten der Mitte ergänzt
+  rename(p.cvp_mitte = p.cvp, w.cvp_mitte = w.cvp)  %>% 
+  select(-c(p.mitte, w.mitte))
+
+#Themen vom Mai 
+mai <- df %>%
   filter(datum > as.Date("01.05.2022", "%d.%m.%Y" )) %>%
-  select(d1e3, d2e3, d3e3)
+  select(d1e1:d3e3)
 
-themen <- unique(themen[!is.na(unlist(mai))]) #Liste aller Themen die von den Mai Abstimmungen betroffen sind
 
-```
-
-```{r}
-data_neu <- data_wer %>%
-  filter(d1e3|d2e3|d3e3 %in% themen) %>%
-  select_if(~sum(!is.na(.)) > 0) %>% #nur Spalten wählen, die nicht zu 100% NAs sind
-  rowwise() %>%
-  mutate(alle_kat = list(c(d1e3,  d2e3,  d3e3))) %>%
-  mutate(alle_kat = list(alle_kat[!is.na(alle_kat)]))
 ```
 
 
 ```{r}
-positionen  <- data_wer %>%
+#Variablen definieren um nachher mehrere Spalten gleichzeitig zu mutieren
+positionen  <- df %>%
   select(ends_with(".pos")|starts_with("p.")|starts_with("pdev")) 
 
-hauptthema <- data_wer %>%
+hauptthema <- df %>%
   select(d1e1, d2e1 ,d3e1)
 
-unterthema <- data_wer %>%
+unterthema <- df %>%
   select(d1e2, d2e2 ,d3e2)
 
-daten <- data_wer %>%
+daten <- df %>%
   select(datum, starts_with("dat."))
 
-resultate <- data_wer %>%
+resultate <- df %>%
   select(ends_with("annahme")| volk | stand)
 
-data_neu <- data_neu %>%
-    mutate(rechtsform = factor(case_when(
-    rechtsform == 1 ~ "Obligatorisches Referendum",
-    rechtsform == 2 ~ "Fakultatives Referendum",
-    rechtsform == 3 ~ "Volksinitiative",
-    rechtsform == 4 ~ "Gegenentwurf zu Volksinitiative",
-    rechtsform == 5 ~ "Stichfrage")))%>% 
-  
+#bereinigten Datensatz erstellen (Variablen benennen, Spalten umbenennen)
+df_clean <- df %>%
+  mutate(rechtsform = factor(case_when(
+    rechtsform == 1 ~ "Obligatorisches Referendum", #OR
+    rechtsform == 2 ~ "Fakultatives Referendum", #FR
+    rechtsform == 3 ~ "Volksinitiative", #VI
+    rechtsform == 4 ~ "Gegenentwurf zu Volksinitiative", #GV
+    rechtsform == 5 ~ "Stichfrage")))%>%  #S
   mutate(across(names(positionen), 
            ~ factor(case_when(. == 1 ~ "Befürwortend",
     .== 2 ~"Ablehnend",
     .== 3 ~"Keine",
+    .== 4 ~"Leere Abgabe",
+    .== 5 ~"Stimmfreigabe",
     .== 8 ~"Vorzug für den Gegenentwurf",
-    .== 9 ~"Vorzug für Volksinitiative",)))) %>%
-  
+    .== 9 ~"Vorzug für Volksinitiative",
+    . == 66 ~"keine",
+    . == 9999 ~"Partei ex. nicht",)))) %>%
   mutate(across(names(resultate), 
                 ~ factor(case_when(. == 0 ~"abgelehnt", 
                 .== 1 ~ "angenommen", 
                 .== 3 ~ "Ständemehr nicht nötig", 
                 .== 8 ~ "Gegenentwurf angenommen", 
                 .== 9 ~ "Volksinitiative angenommen" )))) 
+```
+
+
+
+
+
+```{r}
+
+#Variablen zählen
+n_FR <- unlist(df_clean %>% filter(rechtsform == "Fakultatives Referendum") %>% count())
+n_angenommen <-unlist(df_clean %>% filter(annahme == "angenommen") %>% count()) 
+n_FR_angenommen <-unlist(df_clean %>% filter(rechtsform == "Fakultatives Referendum", annahme == "angenommen") %>% count())
+total_vorlagen <- unlist(df_clean %>% count()) 
+(prob_FR_annahme <- percent(n_FR_angenommen / n_FR))
+
+
+#Wahrscheinlichkeiten für die Positionen vom BR, abhängig von der Rechtsform
+prob_br <- df_clean %>% 
+  select(rechtsform, br.pos) %>% 
+  count(rechtsform, br.pos) %>%
+  mutate(prob = percent(n/sum(n)))
+  #summarise(prob = count(.))
+  
+#wahrscheinlichkeit, dass volk ja sagt bei befürwortender Haltung des BR 
+prob_volk_br <- df_clean %>% 
+  filter(br.pos == "Befürwortend") %>% 
+  select(br.pos, volk) %>% 
+  #group_by(rechtsform, volk) %>% 
+  count(br.pos, volk) %>% 
+  mutate(prob = percent(n/sum(n)))
+
+
+#wahrscheinlichkeit dass volk ja stimmt bei fak. referendum
+prob_volk_FR <- df_clean %>% 
+  filter(rechtsform == "Fakultatives Referendum") %>% 
+  select(rechtsform, volk) %>% 
+  #group_by(rechtsform, volk) %>% 
+  count(rechtsform, volk) %>% 
+  mutate(prob = percent(n/sum(n)))
+
+
+#wahrscheinlichkeit, dass stände ja sagt bei befürwortender Haltung des BR 
+prob_stand_br <- df_clean %>% 
+  filter(br.pos == "Befürwortend") %>% 
+  select(br.pos, stand) %>% 
+  #group_by(rechtsform, volk) %>% 
+  count(br.pos, stand) %>% 
+  mutate(prob = percent(n/sum(n)))
+
+#wahrscheinlichkeit, dass stände ja sagt bei Fak Ref (resultat -> Ständemehr nicht nötig)
+prob_stand_FR <- df_clean %>% 
+  filter(rechtsform == "Fakultatives Referendum") %>% 
+  select(rechtsform, stand) %>% 
+  #group_by(rechtsform, volk) %>% 
+  count(rechtsform, stand) %>% 
+  mutate(prob = percent(n/sum(n)))
+
+
+#Wahrscheinlichkeiten, dass etwas angenommen wird wenn BR ja sagt / Form = Fak. Ref / Form = Volksinitiative
+resultat_br <- df_clean %>% 
+  filter(br.pos == "Befürwortend") %>% 
+  select(br.pos, annahme) %>% 
+  #group_by(rechtsform, volk) %>% 
+  count(br.pos, annahme) %>% 
+  mutate(prob = percent(n/sum(n)))
+
+
+resultat_FR <- df_clean %>% 
+  filter(rechtsform == "Fakultatives Referendum") %>% 
+  select(rechtsform, annahme) %>% 
+  #group_by(rechtsform, volk) %>% 
+  count(rechtsform, annahme) %>% 
+  mutate(prob = percent(n/sum(n)))
+
+
+resultat_VI <- df_clean %>% 
+  filter(rechtsform == "Volksinitiative") %>% 
+  select(rechtsform, annahme) %>% 
+  #group_by(rechtsform, volk) %>% 
+  count(rechtsform, annahme) %>% 
+  mutate(prob = percent(n/sum(n)))
+
+bv_br <- df_clean %>% 
+  select(titel_off_d, br.pos, bv.pos, nr.pos, sr.pos) %>% 
+  mutate(konkordanz = ifelse(br.pos == br.pos & br.pos == nr.pos & nr.pos == sr.pos, "ja", "nein")) 
 
 ```
+
 
 
