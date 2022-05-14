@@ -5,26 +5,30 @@ output: html_notebook
 
 ```{r}
 #Bibliotheken importieren
+
+library(tidymodels)
 library(tidyverse)
 library(plotly)
 library(esquisse)
 library(highcharter)
 library(formattable)
+library(rpart)
+library(rpart.plot)
 
 ```
 
 
 ```{r}
 #Datensatz einlesen
-df <- read.csv("https://swissvotes.ch/page/dataset/swissvotes_dataset.csv", header=TRUE, sep=";", na = c("NA", "."))
+df_original <- read.csv("https://swissvotes.ch/page/dataset/swissvotes_dataset.csv", header=TRUE, sep=";", na = c("NA", "."))
 ```
 
 ```{r}
 parteien <- c(".svp", ".fdp", ".sps", ".cvp", ".gps", ".mitte")
 
 #Daten selektieren
-df <- df %>%
-  select(datum, titel_off_d, anzahl, rechtsform, d1e1:br.pos, bv.pos:srnein, unter.quorum, unter_g, unter_u, ends_with(parteien), ja.lager:neutral.summe, volk:ktjaproz) %>%
+df <- df_original %>%
+  select(datum, titel_kurz_d, anzahl, rechtsform, d1e1:br.pos, bv.pos:srnein, unter.quorum, unter_g, unter_u, ends_with(parteien), ja.lager:neutral.summe, volk:ktjaproz) %>%
   mutate(datum = as.Date(datum, "%d.%m.%Y")) %>% 
   mutate(p.cvp = ifelse(p.cvp == 9999, p.mitte, p.cvp))%>% #CVP wurde zu Mitte -> fehlende Daten cvp durch Daten der Mitte ergänzt
   mutate(w.cvp = ifelse(w.cvp == 0, w.mitte, w.cvp))%>%  #CVP wurde zu Mitte -> fehlende Daten cvp durch Daten der Mitte ergänzt
@@ -35,6 +39,7 @@ df <- df %>%
 mai <- df %>%
   filter(datum > as.Date("01.05.2022", "%d.%m.%Y" )) %>%
   select(d1e1:d3e3)
+
 
 
 ```
@@ -81,21 +86,39 @@ df_clean <- df %>%
                 .== 3 ~ "Ständemehr nicht nötig", 
                 .== 8 ~ "Gegenentwurf angenommen", 
                 .== 9 ~ "Volksinitiative angenommen" )))) 
+
+
+
+data_mai <- df_clean %>%
+  filter(datum > as.Date("01.05.2022", "%d.%m.%Y" )) 
+
 ```
 
 
-
-
-
 ```{r}
-
-#Variablen zählen
+#Variablen zählen / einzelne Wahrscheinlichkeiten berechnen
 n_FR <- unlist(df_clean %>% filter(rechtsform == "Fakultatives Referendum") %>% count())
 n_angenommen <-unlist(df_clean %>% filter(annahme == "angenommen") %>% count()) 
+n_abgelehnt <- total_vorlagen - n_angenommen
 n_FR_angenommen <-unlist(df_clean %>% filter(rechtsform == "Fakultatives Referendum", annahme == "angenommen") %>% count())
+n_FR_abgelehnt <- n_FR - n_FR_angenommen
 total_vorlagen <- unlist(df_clean %>% count()) 
 (prob_FR_annahme <- percent(n_FR_angenommen / n_FR))
+(prob_FR_annahme <- percent(n_FR_angenommen / total_vorlagen))
+(prob_annahme <- n_angenommen / total_vorlagen)
+(prob_FR <- n_FR / total_vorlagen)
 
+
+#Kreuztabellen mit Anzahl
+table(df_clean$rechtsform, df_clean$br.pos)
+
+
+PE <- 116/315 #Anzahl FR angenommen / Anzahl angenommene
+PEN <- 89/361 #Anzahl FR abgelehnt / anz. abgelehnt
+
+PE / (PE+PEN)
+
+n_FR_angenommen / n_angenommen
 
 #Wahrscheinlichkeiten für die Positionen vom BR, abhängig von der Rechtsform
 prob_br <- df_clean %>% 
@@ -111,6 +134,9 @@ prob_volk_br <- df_clean %>%
   #group_by(rechtsform, volk) %>% 
   count(br.pos, volk) %>% 
   mutate(prob = percent(n/sum(n)))
+
+
+#Wahrscheinlichkeit, dass Vorlage Organspende angenommen wird (berücksichtige Faktoren: Rechtsform, BR Pos)
 
 
 #wahrscheinlichkeit dass volk ja stimmt bei fak. referendum
@@ -165,9 +191,136 @@ resultat_VI <- df_clean %>%
 
 bv_br <- df_clean %>% 
   select(titel_off_d, br.pos, bv.pos, nr.pos, sr.pos) %>% 
-  mutate(konkordanz = ifelse(br.pos == br.pos & br.pos == nr.pos & nr.pos == sr.pos, "ja", "nein")) 
+  mutate(konkordanz = ifelse(br.pos == br.pos & br.pos == nr.pos & nr.pos == sr.pos, "ja", "nein"))
+
+
+
+ggplot(df_clean, aes(rechtsform, fill = annahme))+ geom_bar()
+ggplot(df_clean, aes(bv.pos, fill = annahme))+ geom_bar()
 
 ```
 
+
+```{r}
+
+#Visualisierung Einfluss mittels Boxplot
+Unterschriften <- df_clean %>% filter(rechtsform == "Fakultatives Referendum", !is.na(annahme)) %>% ggplot(aes(annahme, unter_g)) + geom_boxplot()
+ggplotly(Unterschriften)
+
+
+jalager <- df_clean %>% filter( !is.na(annahme)) %>% ggplot(aes(annahme, ja.lager)) + geom_boxplot()
+ggplotly(jalager)
+
+
+```
+
+
+```{r} 
+#Entscheidungsbaum
+#reduzierter Datensatz:
+data_baum <- df_clean %>% 
+  select(rechtsform, br.pos, bv.pos, nr.pos, sr.pos, ja.lager, annahme) 
+
+data_mai_baum <- data_mai %>% 
+  select(titel_kurz_d,rechtsform, br.pos, bv.pos, nr.pos, sr.pos,  ja.lager, annahme)
+  
+organspende <- data_mai_baum %>%  filter(titel_kurz_d =="Widerspruchsregelung bei der Organspende")
+Frontex <- data_mai_baum %>%  filter(titel_kurz_d == "Beteiligung an der europäischen Grenz- und Küstenwache Frontex") 
+filmgesetz <- data_mai_baum %>%  filter(titel_kurz_d == "Änderung des Filmgesetzes") 
+
+
+set.seed(1234)
+data_split <- initial_split(data_baum, strata = annahme)
+
+data_train <- training(data_split)
+data_test <- testing(data_split)
+
+
+#Prüfen, ob Wahrscheinlichkeiten etwa gleich verteilt sind
+prop.table(table(data_train$annahme))
+prop.table(table(data_test$annahme))
+prop.table(table(data_baum$annahme))
+
+
+#Parameter für Baum 
+tree_specs <- decision_tree(min_n = 10,tree_depth = 5 ) %>% 
+             set_engine("rpart") %>% 
+              set_mode("classification")
+
+#Modellvorhersage mit allen Variablen im Datenset
+model_alles <- tree_specs %>% 
+          fit(formula = annahme ~ ., data = data_train ) 
+
+
+#Modellvorhersage nur mit rechtsform & Ja-Lager
+model_br_jalager <- tree_specs %>% 
+          fit(formula = annahme ~ rechtsform + ja.lager, data = data_train) 
+
+#Modellvorhersage nur mit Rechtsform & Bundesratsempfehlung
+model_br_rechtsform <- tree_specs %>% 
+          fit(formula = annahme ~ rechtsform + br.pos, data = data_train) 
+
+pred_alles <- predict(model_alles, new_data = data_mai_baum) %>% rename(alles = ".pred_class")
+pred_BR_Rechtsform <- predict(model_br_rechtsform, new_data = data_mai_baum) %>%  rename(BR_Rechtsform = ".pred_class")
+pred_BR_JaLager <- predict(model_br_jalager, new_data = data_mai_baum) %>%  rename(BR_JaLager = ".pred_class")
+
+predict(model_alles, new_data = organspende)
+predict(model_alles, new_data = Frontex)
+predict(model_alles, new_data = filmgesetz)
+
+
+vorhersagen <- cbind(data_mai_baum,pred_alles, pred_BR_Rechtsform, pred_BR_JaLager)  %>% 
+  select(-c(nr.pos, sr.pos, bv.pos)) %>% 
+  rename(Titel = titel_kurz_d)
+
+
+```
+
+
+```{r} 
+#Entscheidungsbaum nur mit rpart (da Baum sonst nicht geplottet werden konnte)
+model <- rpart(annahme ~ ., data = data_baum, method = 'class',control=rpart.control(minsplit = 12, minbucket = 10, cp=0.009))
+
+#Vorhersagen, wobei das Modell wieder alle Variablen berücksichtigt
+predict(model, data_mai_baum, type = 'class')
+predict(model, organspende, type = 'class')
+predict(model, Frontex, type = 'class')
+predict(model, filmgesetz, type = 'class')
+rpart.plot(model, extra = "auto")
+
+
+
+```
+
+
+
+
+```{r}
+#Visualisierung Verteilung der Rechtsformen
+ggplot(df_clean, aes(x = rechtsform)) +
+  geom_bar()
+
+
+```
+
+
+```{r}
+#Korrelation berechnen
+
+cor(data_wer$ja.lager, data_wer$annahme, use = "complete.obs")
+
+library(rcompanion)
+
+data <- table(df_clean$rechtsform, df_clean$br.pos)
+data2<- table(df_clean$ja.lager, df_clean$rechtsform)
+
+data2
+
+
+#calculate Cramer's V
+cramerV(data)
+cramerV(data2)
+
+```
 
 
