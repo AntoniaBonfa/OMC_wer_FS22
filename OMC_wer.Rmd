@@ -5,30 +5,34 @@ output: html_notebook
 
 
 Als erstes laden wir alle Pakete, die für dieses Projekt benötigt werden:
-```{r}
-#Bibliotheken importieren
+```{r Bibliotheken importieren}
 library(tidymodels) #Entscheidungsbaum
 library(tidyverse) #Datawrangling, Visualisierungen
 library(plotly) # Interaktive Visualisierungen
 library(formattable) #für Formatierungen -> hier um Prozente schön darzustellen
 library(rpart) #Entscheidungsbaum
 library(rpart.plot) #Entscheidungsbaum
-library(rcompanion)#Chi-Quadrat-Tests, CramerV
+library(rcompanion)#CramerV
 
 ```
 
 Danach wird der Datensatz eingelesen: Swissvotes Datensatz sowie unser eigener Datensatz mit den Vorhersagen der Tamedia & SRG
-```{r}
-#Datensatz einlesen
+```{r Datensätze einlesen}
 df <- read.csv("https://swissvotes.ch/page/dataset/swissvotes_dataset.csv", header=TRUE, sep=";", na = c("NA", "."))
-#df_vorhersagen <- read.csv("C:/Users/Antonia/Downloads/WER andere Initiativen.csv", header=TRUE, sep=";", na = c("NA", "."))
+df_vorhersagen <- read.csv("C:/Users/Antonia/Downloads/Vorhersagen_SRG_Tamedia.csv", header=TRUE, sep=",", na = c("NA", "."))
+
   
 ```
 
 Im nächsten Schritt werden die Daten bereinigt, so dass wir einen Datensatz erhalten mit dem wir arbeiten können. 
-```{r}
+```{r Data Wrangling}
 #Variablen definieren um nachher mehrere Spalten gleichzeitig zu mutieren
 parteien <- c(".svp", ".fdp", ".sps", ".cvp", ".gps", ".mitte")
+
+
+hauptthema <- df %>%
+  select(d1e1, d2e1 ,d3e1)
+
 
 positionen  <- df %>%
   select(ends_with(".pos")|starts_with("p.")|starts_with("pdev")) 
@@ -39,8 +43,14 @@ daten <- df %>%
 resultate <- df %>%
   select(ends_with("annahme")| volk | stand)
 
+Thema <- df %>%
+  select(d1e3, d2e3, d3e3)
+
+
 #bereinigten Datensatz erstellen (Variablen benennen, Spalten umbenennen, gewisse NAs droppen, fehlende Werte ergänzen)
 df_clean <- df %>%
+  mutate(p.cvp = ifelse(p.cvp == "9999", p.mitte, p.cvp))%>% #CVP wurde zu Mitte -> fehlende Daten cvp durch Daten der Mitte ergänzt
+  mutate(w.cvp = sum(w.cvp, w.mitte))%>%  #CVP wurde zu Mitte -> fehlende Daten cvp durch Daten der Mitte ergänzt
   mutate(rechtsform = factor(case_when(
     rechtsform == 1 ~ "Obligatorisches Referendum", #OR
     rechtsform == 2 ~ "Fakultatives Referendum", #FR
@@ -64,141 +74,205 @@ df_clean <- df %>%
                 .== 8 ~ "Gegenentwurf angenommen", 
                 .== 9 ~ "Volksinitiative angenommen" )))) %>% 
   drop_na(annahme) %>% 
+  mutate(volkja.proz = as.numeric(volkja.proz)) %>% 
   select(datum, titel_kurz_d, anzahl, rechtsform, d1e1:br.pos, bv.pos:srnein, unter.quorum, unter_g, unter_u, ends_with(parteien), ja.lager:neutral.summe, volk:ktjaproz) %>%
   mutate(datum = as.Date(datum, "%d.%m.%Y")) %>% 
-  mutate(p.cvp = ifelse(p.cvp == 9999, p.mitte, p.cvp))%>% #CVP wurde zu Mitte -> fehlende Daten cvp durch Daten der Mitte ergänzt
-  mutate(w.cvp = ifelse(w.cvp == 0, w.mitte, w.cvp))%>%  #CVP wurde zu Mitte -> fehlende Daten cvp durch Daten der Mitte ergänzt
   rename(p.cvp_mitte = p.cvp, w.cvp_mitte = w.cvp)  %>% 
   select(-c(p.mitte, w.mitte))
 
-
-
-data_mai <- df_clean %>%
-  filter(datum > as.Date("01.05.2022", "%d.%m.%Y" )) 
-
+pos_parteien <- names(select(df_clean, starts_with("p.")))
 ```
 
 
+```{r Datensätze für die Abstimmungen im Mai}
+#Abstimmungen vom Mai herausfiltern
+Abstimmungen_Mai <- df_clean %>%
+  filter(datum > as.Date("01.05.2022", "%d.%m.%Y" )) 
 
-```{r}
 
-#'Mittels Kombinatorik wird die Wahrscheinlichkeit gewisser Ereignisse berechnet.
-# Dabei möchten wir folgende Faktoren untersuchen:
-# Rechtsform (Volksinitiative, Freiwilliges Referendum, Obligatorisches Referendum, Gegenvorschlag)
-# Empfehlung des Bundesrats (Befürwortend, ablehnend)
-# Haltung des Ständerats (befürwortend, ablehnend)
-# Haltung der grössten Parteien (SVP, SP, FDP, Gründe/Mitte, CVP) (befürwortend, ablehnend, Stimmfreigabe, leer, keine)
+themen <- c(1.62, 2.22, 4.13, 10.32, 12.53)
+netflix <- c(12.53, 4.13)
+frontex <- c(2.22, 10.32)
+organspende <- c(10.11,1.62)
 
-#Variablen zählen / einzelne Wahrscheinlichkeiten berechnen
+
+#Abstimmungen mit den selben beiden Themen wie "Lex Netflix" (12.53, 4.13)
+wie_netflix <-
+  df_clean %>% 
+  filter(d1e3 %in% netflix | d2e3 %in% netflix |d3e3 %in% netflix) %>% 
+  mutate(across(names(Thema), 
+           ~ factor(case_when(. == 1.62 ~ "Grundrechte",
+    .== 2.22 ~"Aussenpolitik: EU",
+    .== 4.13 ~"Wirtschaft: Strukturpolitik",
+    .== 10.32 ~"Sozialpolitik: Flüchtlinge",
+    .== 12.53 ~"Medien"))))
+
+#Abstimmungen mit den selben beiden Themen wie Frontex (2.22, 10.32)
+wie_frontex <-
+  df_clean %>% 
+  filter(d1e3 %in% frontex | d2e3 %in% frontex |d3e3 %in% frontex) %>% 
+  mutate(across(names(Thema), 
+           ~ factor(case_when(. == 1.62 ~ "Grundrechte",
+    .== 2.22 ~"Aussenpolitik: EU",
+    .== 4.13 ~"Wirtschaft: Strukturpolitik",
+    .== 10.32 ~"Sozialpolitik: Flüchtlinge",
+    .== 12.53 ~"Medien"))))
+
+#Abstimmungen mit den selben Themen wie die Organspendeinitiative (10.11,1.62)
+wie_organspende <-
+  df_clean %>% 
+  filter(d1e3 %in% organspende | d2e3 %in% organspende |d3e3 %in% organspende) %>% 
+  mutate(across(names(Thema), 
+           ~ factor(case_when(. == 1.62 ~ "Grundrechte",
+    .== 2.22 ~"Aussenpolitik: EU",
+    .== 4.13 ~"Wirtschaft: Strukturpolitik",
+    .== 10.32 ~"Sozialpolitik: Flüchtlinge",
+    .== 12.53 ~"Medien"))))
+
+
+```
+
+Mittels Kombinatorik wird die Wahrscheinlichkeit gewisser Ereignisse berechnet.
+Dabei möchten wir folgende Faktoren untersuchen:
+Rechtsform (Volksinitiative, Freiwilliges Referendum, Obligatorisches Referendum, Gegenvorschlag)
+Empfehlung des Bundesrats (Befürwortend, ablehnend)
+Haltung des Ständerats (befürwortend, ablehnend)
+Haltung der grössten Parteien (SVP, SP, FDP, Gründe/Mitte, CVP) (befürwortend, ablehnend, Stimmfreigabe, leer, keine)
+
+```{r Wahrscheinlichkeitsmodell: allgemeine Wahrscheinlichkeiten}
 total_vorlagen <- unlist(df_clean %>% count()) 
-n_FR <- unlist(df_clean %>% filter(rechtsform == "Fakultatives Referendum") %>% count())
 n_angenommen <-unlist(df_clean %>% filter(annahme == "angenommen") %>% count()) 
-
 n_abgelehnt <- total_vorlagen - n_angenommen
-n_FR_angenommen <-unlist(df_clean %>% filter(rechtsform == "Fakultatives Referendum", annahme == "angenommen") %>% count())
-n_FR_abgelehnt <- n_FR - n_FR_angenommen
-
-(prob_FR_annahme <- percent(n_FR_angenommen / n_FR))
-(prob_FR_annahme <- percent(n_FR_angenommen / total_vorlagen))
 (prob_annahme <- n_angenommen / total_vorlagen)
-(prob_FR <- n_FR / total_vorlagen)
 
-
-#Kreuztabellen mit Anzahl
-table(df_clean$rechtsform, df_clean$br.pos)
-
-n_FR_angenommen / n_angenommen
-
-#Wahrscheinlichkeiten für die Positionen vom BR, abhängig von der Rechtsform
+#Wahrscheinlichkeiten für die Positionen der Parteien (P(C) ∩ P(D) ∩ P(E) ∩ P(F) ∩ P(A)), wenn es sich um ein Fak. Ref handelt:
 df_clean %>% 
+  #filter(rechtsform == "Fakultatives Referendum")%>% 
+  filter_at(vars(pos_parteien), all_vars(.=="Befürwortend"|.== "Ablehnend")) %>% 
+  select(pos_parteien, annahme, ) %>%
+  count(p.svp, p.fdp, p.sps, p.cvp_mitte, p.gps, annahme) %>% 
+  mutate(prob = percent(n/sum(n))) %>% 
+  arrange(desc(prob))
+
+
+#Wahrscheinlichkeiten dass BR ja empfiehlt, wenn Rechtsform Fakultatives Referendum ist (P(B2)):
+df_clean %>% 
+  filter(rechtsform =="Fakultatives Referendum") %>% 
   select(rechtsform, br.pos) %>% 
   count(rechtsform, br.pos) %>%
   mutate(prob = percent(n/sum(n)))
-  #summarise(prob = count(.))
   
-#wahrscheinlichkeit, dass volk ja sagt bei befürwortender Haltung des BR 
-df_clean %>% 
-  filter(br.pos == "Befürwortend") %>% 
-  select(br.pos, volk) %>% 
-  #group_by(rechtsform, volk) %>% 
-  count(br.pos, volk) %>% 
-  mutate(prob = percent(n/sum(n)))
-
-
-#Wahrscheinlichkeit, dass Vorlage Organspende angenommen wird (berücksichtige Faktoren: Rechtsform, BR Pos)
-prob_FR_annahme * prob_annahme
-
-
-#wahrscheinlichkeit dass volk ja stimmt bei fak. referendum
-prob_volk_FR <- df_clean %>% 
-  filter(rechtsform == "Fakultatives Referendum") %>% 
-  select(rechtsform, volk) %>% 
-  #group_by(rechtsform, volk) %>% 
-  count(rechtsform, volk) %>% 
-  mutate(prob = percent(n/sum(n)))
-
-
-#wahrscheinlichkeit, dass stände ja sagt bei befürwortender Haltung des BR 
-df_clean %>% 
-  filter(br.pos == "Befürwortend") %>% 
-  select(br.pos, stand) %>% 
-  #group_by(rechtsform, volk) %>% 
-  count(br.pos, stand) %>% 
-  mutate(prob = percent(n/sum(n)))
-
-#wahrscheinlichkeit, dass stände ja sagt bei Fak Ref (resultat -> Ständemehr nicht nötig)
-prob_stand_FR <- df_clean %>% 
-  filter(rechtsform == "Fakultatives Referendum") %>% 
-  select(rechtsform, stand) %>% 
-  #group_by(rechtsform, volk) %>% 
-  count(rechtsform, stand) %>% 
-  mutate(prob = percent(n/sum(n)))
-
-
-#Wahrscheinlichkeiten, dass etwas angenommen wird wenn BR ja sagt / Form = Fak. Ref / Form = Volksinitiative
-df_clean %>% 
+#wahrscheinlichkeit, dass eine Abstimmung angenommen wird bei befürwortender Haltung des BR (P(A2) ∩ P(B2))
+brpos <- df_clean %>% 
   filter(br.pos == "Befürwortend") %>% 
   select(br.pos, annahme) %>% 
-  #group_by(rechtsform, volk) %>% 
   count(br.pos, annahme) %>% 
   mutate(prob = percent(n/sum(n)))
 
+prob_brpos <- brpos[2,4]
 
-df_clean %>% 
+#Wahrscheinlichkeiten, dass eine Abstimmung angenommen wird, wenn die Rechtsform Fakultatives Referendum ist & der BR befürwortet
+FR_BR <- df_clean %>% 
+  filter(br.pos == "Befürwortend", rechtsform == "Fakultatives Referendum") %>% 
+  select(br.pos, annahme) %>% 
+  count(br.pos, annahme) %>% 
+  mutate(prob = percent(n/sum(n)))
+
+prob_FR_BR <- FR_BR[2,4]
+#Wahrscheinlichkeit, dass ein fakultatives Referendum angenommen wird
+prob_FR <- df_clean %>% 
   filter(rechtsform == "Fakultatives Referendum") %>% 
   select(rechtsform, annahme) %>% 
-  #group_by(rechtsform, volk) %>% 
   count(rechtsform, annahme) %>% 
   mutate(prob = percent(n/sum(n)))
 
-
-df_clean %>% 
-  filter(rechtsform == "Volksinitiative") %>% 
-  select(rechtsform, annahme) %>% 
-  #group_by(rechtsform, volk) %>% 
-  count(rechtsform, annahme) %>% 
+#Wahrscheinlichkeit, dass eine Vorlage angenommen wurde wenn Tamedia ein "Ja" vorhergesagt hat:
+Tamedia <- df_vorhersagen %>%
+  filter(Tamedia == "Annahme") %>% 
+  count(Resultat) %>% 
   mutate(prob = percent(n/sum(n)))
+prob_Tamedia <- Tamedia[2,3]
 
-
-#Bei allen 3 Vorlagen ist die Rechtsform "fakultatives Referendum", die Empfehlung des Bundesrats "befürwortend" und die Haltungen der Parteien erwartungsgemäss unterschiedlich. Die Wahrscheinlichkeit, dass eine Vorlage angenommen wird für die ersten b
-
+#Wahrscheinlichkeit, dass eine Vorlage angenommen wurde wenn SRG ein "Ja" vorhergesagt hat:
+SRG <- df_vorhersagen %>%
+  filter(SRG == "Annahme") %>% 
+  count(Resultat) %>% 
+  mutate(prob = percent(n/sum(n)))
+prob_SRG <- SRG[2,3]
 
 ```
 
 
-```{r}
-ggplot(df_clean, aes(rechtsform, fill = annahme))+ geom_bar()
-ggplot(df_clean, aes(bv.pos, fill = annahme))+ geom_bar()
-
+```{r Wahrscheinlichkeit nach Themen}
+#Wahrscheinlichkeiten nach Thema
 ```
 
 
-```{r}
-#Anhand unserer Berechnungen wissen wir, wie die Wahrscheinlichkeiten für gewisse Ereignisse sind. Diese müssen wir jetzt mittels Hypothesentest prüfen. Für die Hypothesentests werden wir nicht das definitive Resultat (annahme) berücksichtigen, sondern ob das Volk eine Vorlage angenommen hat (volk, volkja.proz)
+```{r Wahrscheinlichkeiten nach Parteiparolen}
+#Wahrscheinlichkeit, dass eine Vorlage angenommen wird nach Parteiparolen:
+Abstimmungen_Mai %>% 
+  select(titel_kurz_d, starts_with("p."))
 
+Filmgesetz_parteien <- df_clean %>% 
+  filter(p.svp == "Ablehnend" & p.fdp == "Ablehnend" & p.sps == "Befürwortend" & p.cvp_mitte == "Befürwortend" & p.gps == "Befürwortend" ) %>%     count(annahme) %>% 
+  mutate(prob = percent(n/sum(n)) )
+prob_Filmgesetz_parteien <- Filmgesetz_parteien[2,3]
+         
+
+Organspende_parteien <- df_clean %>% 
+  filter(p.svp == "Ablehnend" & p.fdp == "Befürwortend" & p.sps == "Befürwortend" & p.cvp_mitte == "Befürwortend" & p.gps == "Befürwortend" ) %>%   count(annahme) %>% 
+  mutate(prob = percent(n/sum(n)))
+prob_Organspende_parteien <- Organspende_parteien[2,3]
+
+
+Frontex_parteien <- df_clean %>% 
+  filter(p.svp == "Befürwortend" & p.fdp == "Befürwortend" & p.sps == "Ablehnend" & p.cvp_mitte == "Befürwortend" & p.gps == "Ablehnend" ) %>%    count(annahme) %>% 
+  mutate(prob = percent(n/sum(n)))
+prob_Frontex_parteien <- Frontex_parteien[2,3]
+
+
+```
+
+```{r Wahrscheinlichkeitsmodell für jede Vorlage}
+Kriterien <- c("Wahrscheinlichkeit nach Rechtsform", 
+               "Wahrscheinlichkeit nach Tamedia", 
+               "Wahrscheinlichkeit nach SRG", 
+               "Wahrscheinlichkeit nach Parteiposition", 
+               #"Wahrscheinlichkeit nach Thema", 
+               "Wahrscheinlichkeit nach Empfehlung Bundesrat")
+
+Organspende <- data.frame(Kriterien, P = c(prob_FR_BR, 
+                                 prob_Tamedia,
+                                 prob_SRG,
+                                 prob_Organspende_parteien,
+                                 #prob_Organspende_thema,
+                                 prob_brpos))
+(prob_Organspende <- mean(unlist(Organspende["P"])))
+
+
+Filmgesetz <- data.frame(Kriterien, P = c(prob_FR_BR, 
+                                 prob_Tamedia,
+                                 prob_SRG,
+                                 prob_Filmgesetz_parteien,
+                                 #prob_Organspende_thema,
+                                 prob_brpos))
+(prob_Filmgesetz <- mean(unlist(Filmgesetz["P"])))
+
+
+Frontex <- data.frame(Kriterien, P = c(prob_FR_BR, 
+                                 prob_Tamedia,
+                                 prob_SRG,
+                                 prob_Frontex_parteien,
+                                 #prob_Organspende_thema,
+                                 prob_brpos))
+(prob_Frontex <- mean(unlist(Frontex["P"])))
+```
+
+Anhand unserer Berechnungen wissen wir, wie die Wahrscheinlichkeiten für gewisse Ereignisse sind. Diese müssen wir jetzt mittels Hypothesentest prüfen.
+```{r Verteilung der Daten prüfen}
 #Histogram zur Prüfung, wie die Daten verteilt sind
 ggplot(df_clean, aes(volkja.proz)) +
-  geom_histogram()+
+  geom_histogram(bins = 25)+
   labs(title = "Verteilung Prozentualer ja-Stimmen Anteil",
        x = "Prozentsatz Ja-Stimmen",
        y = "Anzahl Abstimmungen") 
@@ -209,7 +283,8 @@ ggplot(df_clean, aes(volkja.proz)) +
 qqnorm(df_clean$volkja.proz)
 qqline(df_clean$volkja.proz,col="green")
 
-#Wir überprüfen, ob dem wirklich so ist mittels Bootstrapping -> wir nehmen 5000 Stichproben von unserem Datensatz und berechnen jeweils den Mittelwert der Stichprobe. 
+#Überprüfung mittels bootstrapping : wir nehmen 5000 Stichproben von unserem Datensatz und berechnen jeweils den Mittelwert der Stichprobe. 
+set.seed(123)
 bootstraping <- (replicate(n=5000, 
                        expr = {
                          df_clean %>% 
@@ -219,7 +294,7 @@ bootstraping <- (replicate(n=5000,
                         }))
 
 
-#Verteilung visualisieren -> es handelt sich definitiv um eine Normalverteilung
+#Verteilung visualisieren -> die Stichproben sind Normalverteilt = Zentraler Grenzwertsatz!
 tibble(resample_mean = bootstraping) %>% 
   ggplot(aes(resample_mean)) +
   geom_histogram() +
@@ -227,46 +302,74 @@ tibble(resample_mean = bootstraping) %>%
        x = "Durchschnitt Ja-Prozentsatz pro Stichprobe",
        y = "Anzahl Stichproben") 
 
+```
 
+```{r Hypothesentests der einzelnen Vorlagen}
+#Statistische Kennzahlen von einzelnen Variablen ermitteln (Standardabweichung, Mittelwert)
+volk_sd <- sd(df_clean$volkja.proz)
+volk_mean <- mean(df_clean$volkja.proz)
 
-#Mittelwert und Standardabweichung unserer Stichproben:
-sd(bootstraping)
-mean(bootstraping)
-var(bootstraping)
+#Standardabweichung von der Basiswahrscheinlichkeit
+(se_annahme <- (prob_annahme*(1-prob_annahme)**2)/(n_angenommen))
+(se_ablehnung <- (prob_annahme*(1-prob_annahme)**2)/(n_abgelehnt))
 
-
-#Unterschied zum ursprünglichen Datensatz
-volk_sd - sd(bootstraping) 
-volk_mean - mean(bootstraping)
+se_total <- sqrt(se_annahme + se_ablehnung)
 
 
 #Signifikanzniveau festlegen. Da es keine kritischen Daten sind ist 0.5 für alle Hypothesen ausreichend
 alpha = 0.05
 
-```
 
+#Funktion um P-Wert zu berechnen
+p_wert <- function(P_Vorlage) {
+  resultat <- pnorm((P_Vorlage-prob_annahme)/se_total, lower.tail = FALSE) #rechtsseitiger Test
+  return(ifelse(resultat < alpha, paste("P-Wert:",resultat,"ist kleiner als Signifikanzniveau: Nullhypothese muss verworfen werden."),paste("P-Wert:",resultat,"ist grösser als Signifikanzniveau: Nullhypothese ist erwiesen.") ))
+}
 
-```{r}
-#Statistische Kennzahlen von einzelnen Variablen ermitteln (Standardabweichung, Mittelwert)
-volk_sd <- sd(df_clean$volkja.proz)
-volk_mean <- mean(df_clean$volkja.proz)
-```
-
-
-```{r} 
-#Hypothese 1
-
-0.38*45
+p_wert(prob_Filmgesetz)
+p_wert(prob_Organspende)
+p_wert(prob_Frontex)
 
 ```
+Zusätzlich zum Hypothesentest für die einzelnen Vorlagen haben wir noch den Einfluss einzelner Variablen mittels Hypothesentest überprüft.
+```{r Funktionen für den Hypothesentest}
 
+hypo_fisher <- function(data){
+  fisher <- fisher.test(data)
+  return (ifelse(fisher$p.value < alpha, paste("P-Wert (", fisher, ") kleiner als Signifikanzniveau: H0 muss verworfen werden."), 
+                 paste("P-Wert (", fisher, ") grösser als Signifikanzniveau: H0 ist korrekt.") ))
+}
 
-```{r}
-#'Hypothese 3: Die Empfehlung des Bundesrats hat keinen Effekt auf das Resultat (H0) / hat einen Effekt (Ha)
-#'es gibt zwei Varianten das zu prüfen: 
-#'Anhand von Br.Pos und Annahme (nur kategorische Daten -> Chi-Quadrat-Test/Fishers exact Test resp. CramerV)
-#'anhand von Br.Pos und Anteil Ja-Stimmen (Volkja.proz) -> stetige Daten & kategorische  -> P-Wert berechnen
+hypo_cramer <- function(data){
+cramer <- cramerV(data)
+return (case_when(cramer<0.4 ~ paste("CramerV Wert:",cramer, "- keine Abhängigkeit"), 
+          cramer<0.7 ~ paste("CramerV Wert:",cramer, "- Mittlere Abhängigkeit"),
+          cramer>0.7 ~ paste("CramerV Wert:",cramer, "- Hohe Abhängigkeit")))
+}
 
+```
+
+Hypothese 1: Aus der Vorhersage der Tamedia kann nicht auf das Resultat geschlossen werden (H0) / kann das Resultat vorhergesagt werden (Ha)
+```{r Hypothese 1: Vorhersage Tamedia} 
+
+#Kreuztabelle Verteilung
+(H1 <- table(df_vorhersagen$Tamedia, df_vorhersagen$Resultat))
+
+#Fishers Test durchführen
+hypo_fisher(H1)
+
+```
+Hypothese 2: Aus der Vorhersage der SRG kann nicht auf das Resultat geschlossen werden (H0) / kann das Resultat vorhergesagt werden (Ha)}
+```{r Hypothese 2: Vorhersage SRG} 
+#Kreuztabelle Verteilung
+(H2 <- table(df_vorhersagen$SRG, df_vorhersagen$Resultat))
+
+#Fishers Test durchführen
+hypo_fisher(H2)
+```
+
+Hypothese 3: Es gibt keinen signifikanten Zusammenhang zwischen der Empfehlung des Bundesrates und dem Ergebniss (H0) / es gibt einen signifikanten Zusammenhang (Ha)
+```{r Hypothese 3: Empfehlung Bundesrat}
 
 #für CramerV darf der Datensatz keine NAs enthalten -> bereinigten Datensatz erstellen: 
 df_cramer_3 <- df_clean %>% 
@@ -276,189 +379,40 @@ df_cramer_3 <- df_clean %>%
 #Kreuztabelle der Verteilungen
 (H3 <- table(df_cramer_3$br.pos, df_cramer_3$volk))
 
-
 #Hypothese überprüfen mittels CramerV & Fishers exact Test (fisher Test zur Sicherheit, da unser Datensatz nicht sehr gross ist)
-chisq.test(H3)
-cramer_H3 <- cramerV(H3)
-fisher_H3 <- fisher.test(H3)
 
-
-ifelse(fisher_H3$p.value < alpha, "P-Wert kleiner als Signifikanzniveau: H0 muss verworfen werden", 
-       "P-Wert grösser als Signifikanzniveau: H0 ist korrekt" )
-
-case_when(cramer_H3<0.4 ~"keine Abhängigkeit", 
-          cramer_H3<0.7 ~ "Mittlere Abhängigkeit",
-          cramer_H3>0.7 ~"Variablen sind abhängig")
+hypo_fisher(H3)
+hypo_cramer(H3)
  
-
-#Hypothese prüfen mittels zweiseitigem Z_Test 
-df_brja <- df_clean %>%  
-  filter(br.pos == "Befürwortend") 
-
-sd_brja <- sd(df_brja$volkja.proz)
-mean_brja <- mean(df_brja$volkja.proz)
-
-
-
-
-z_score_br <- (mean_brja - volk_mean) / volk_sd
-
-
-pnorm_br <- 2*pnorm(z_score_br, lower.tail = FALSE) - alpha
-
-ifelse(pnorm_br < alpha, "P-Wert kleiner als Signifikanzniveau: H0 muss verworfen werden", 
-       "P-Wert grösser als Signifikanzniveau: H0 ist korrekt" )
-
-
-#' Resultat:
-#' der CramerV Wert ist mit 0.54 im mittleren Bereich, die Abhängigkeit der Variablen ist also mässig
-#' Fishers Test ergibt einen P-Wert der sehr klein ist, was bedeuten würde, dass die Nullhypothese verworfen werden muss
-#' Der P-Test ergibt einen Wert der deutlich grösser als das Signifikationslevel ist, weswegen die Nullhypothese ebenfalls verworden werden sollte
-
 ```
 
 
-```{r}
-#'Hypothese 4: Die Grösse des Wähleranteils des Ja-Lagers (ja.lager) hat keinen Einfluss auf den Prozentsatz der Ja-Stimmen (volkja.proz) (H0) resp. hat einen Einfluss (Ha)
-#'Die Daten sind beide stetig -> z_Test
-#'Alternativ kann das Ja.lager in eine kategorische Variable umgewandelt werden (je 10% sind ein Wert), dann kann wieder CramerV / Fisher benutzt werden
 
-
-
-
-```
-
-
-```{r}
-stack_overflow %>%  group_by(age_first_code_cut)%>%  summarize(mean_compensation = mean(converted_comp))
-
-df_clean %>% 
-  group_by(bv.pos) %>% 
-  summarize(mean_ja = mean(volkja.proz))
-```
-
-
-```{r}
-pairwise.t.test(df_clean$ja.lager, df_clean$annahme, p.adjust.method = "none")
-
-#Hypothese 4: es besteht ein Zusammenhang zwischen der Grösse des Wähleranteils des Ja-Lagers und  dem Abstimmungsresultat
-#t_test für Hypothese 4: Wähleranteil Ja-Lager und Annahme
-anova <- df_clean %>% 
-  select(annahme, ja.lager) %>% 
-  drop_na(annahme, ja.lager) %>% 
-  group_by(annahme) %>% 
-  summarize(mean_waehler = mean(ja.lager),
-            s = sd(ja.lager),
-            n = n()) 
-
-annahme_mean <- anova[1,2]
-annahme_s <- anova[1,3]
-annahme_n <- anova[1,4]
-ablehnung_mean <- anova[2,2]
-ablehnung_s <- anova[2,3]
-ablehnung_n <- anova[2,4]
-
-nom <- ablehnung_mean - annahme_mean  
-denom <- sqrt(annahme_s ^2 / annahme_n + ablehnung_s ^2 / ablehnung_n)
-
-t_score <- as.double(nom / denom)
-freiheitsgrade <- as.integer(annahme_n + ablehnung_n -2)
-
-
-(p_value <- pt(t_score*1, df = freiheitsgrade*1, lower.tail = FALSE))
-
-
-anova_2 <- df_clean %>% 
-  select(volkja.proz, bv.pos) %>% 
-  group_by(bv.pos) %>% 
-  summarize(mean_annahme = mean(volkja.proz),
-            s = sd(volkja.proz),
-            n = n())
-
-
-
-br_nein_mean <- anova_2[1,2]
-br_nein_s <- anova_2[1,3]
-br_nein_n <- anova_2[1,4]
-br_ja_mean <- anova[2,2]
-br_ja_s <- anova[2,3]
-br_ja_n <- anova[2,4]
-
-
-nom <- br_ja_mean -br_nein_mean  
-denom <- sqrt(br_ja_s ^2 / br_ja_n + br_nein_s ^2 / br_nein_n)
-
-t_score <- as.double(nom / denom)
-freiheitsgrade <- as.integer(br_ja_n + br_nein_n -2)
-
-(p_value <- pt(t_score*1, df = freiheitsgrade*1, lower.tail = FALSE))
-
-#Chi-Square Tests
-
-
-
-df_noNA <- df_clean %>% 
-  filter(rechtsform != "Stichfrage") %>%
-  mutate(rechtsform = droplevels(rechtsform)) %>% 
-  mutate(br.pos = ifelse(is.na(br.pos), bv.pos, br.pos)) %>% 
-  drop_na(annahme)
-```
-
-
-```{r}
-#Hypothese 5: die Rechtsform hat keinen Einfluss auf das Abstimmungsresultat (H0) / hat einen Einfluss (Ha)
+Hypothese 4: die Rechtsform hat keinen Einfluss auf das Abstimmungsresultat (H0) / hat einen Einfluss (Ha)
+```{r Hypothese 4: Rechtsform}
 
 #für CramerV darf der Datensatz keine NAs enthalten -> bereinigten Datensatz erstellen: 
-df_cramer_5 <- df_clean %>% 
+df_cramer_4 <- df_clean %>% 
   drop_na(rechtsform, volk) %>% 
   mutate(volk = droplevels(volk), rechtsform = droplevels(rechtsform))
 
 #Kreuztabelle der Verteilungen
-(H5 <- table(df_cramer_5$rechtsform, df_cramer_5$volk))
-
+(H4 <- table(df_cramer_4$rechtsform, df_cramer_4$volk))
 
 #Hypothese überprüfen mittels CramerV & Fishers exact Test (fisher Test zur Sicherheit, da unser Datensatz nicht sehr gross ist)
-chisq.test(H5)
-cramer_H5 <- cramerV(H5)
-fisher_H5 <- fisher.test(H5)
-
-
-ifelse(fisher_H5$p.value < alpha, "P-Wert kleiner als Signifikanzniveau: H0 muss verworfen werden", 
-       "P-Wert grösser als Signifikanzniveau: H0 ist korrekt" )
-
-case_when(cramer_H5<0.4 ~"keine Abhängigkeit", 
-          cramer_H5<0.7 ~ "Mittlere Abhängigkeit",
-          cramer_H5>0.7 ~"Variablen sind abhängig")
+hypo_fisher(H4)
+hypo_cramer(H4)
  
-
-#Hypothese prüfen mittels zweiseitigem Z_Test 
-df_VI <- df_clean %>%  
-  filter(rechtsform == "Volksinitiative") 
-
-sd_df_VI <- sd(df_VI$volkja.proz)
-mean_df_VI <- mean(df_VI$volkja.proz)
-
-z_score_br <- (mean_df_VI - volk_mean) / volk_sd
-
-
-pnorm_br <- 2*pnorm(z_score_br, lower.tail = FALSE) - alpha
-
-ifelse(pnorm_br < alpha, "P-Wert kleiner als Signifikanzniveau: H0 muss verworfen werden", 
-       "P-Wert grösser als Signifikanzniveau: H0 ist korrekt" )
-
-#Fisher Test
-fisher.test(table(df_vorhersagen$Voraussage.Tamedia, df_vorhersagen$Vorhersage.wahr.oder.falsch))
-fisher.test(table(df_vorhersagen$Voraussage.SRG, df_vorhersagen$Vorhersage.wahr.oder.falsch))
-
-
 ```
 
-```{r} 
-#Als zusätzlichen Schritt haben wir versucht, einen Entscheidungsbaum zu erstellen, der das Resultat ebenfalls vorhersagt. 
+
+Als zusätzlichen Schritt haben wir versucht, einen Entscheidungsbaum zu erstellen, der das Resultat ebenfalls vorhersagt. 
+```{r Entscheidungsbaum} 
+
 #reduzierter Datensatz für Baum (Entfernung Resultatvariablen wie Volk, Kanton, Resultate pro Kanton etc):
 data_baum <- df_clean %>% select(rechtsform, names(hauptthema), br.pos:nr.pos, sr.pos, ja.lager, bet, annahme )
 
-data_mai_baum <- data_mai %>% 
+data_mai_baum <- Abstimmungen_Mai %>% 
   select(titel_kurz_d, rechtsform, names(hauptthema), br.pos:nr.pos, sr.pos, ja.lager, bet, annahme )
   
 organspende <- data_mai_baum %>%  filter(titel_kurz_d =="Widerspruchsregelung bei der Organspende")
@@ -510,11 +464,11 @@ pred_BR_JaLager <- predict(model_br_jalager, new_data = data_mai_baum) %>%  rena
 #Entscheidungsbaum nur mit rpart (Model musste dazu neu erstellt werden da rpart nicht kompatibel mit anderer Library)
 
 #Visualisierung Baum der alle Werte berücksichtigt
-model_rpart_alles <- rpart(annahme ~ ., data = data_train, method = 'class',control=rpart.control(minsplit = 12, minbucket = 10, cp=0.01))
+model_rpart_alles <- rpart(annahme ~ ., data = data_train, method = 'class',control=rpart.control(minsplit = 10, minbucket = 10, cp=0.01))
 rpart.plot(model_rpart_alles, extra = "auto")
 
 #Visualisierung Baum der nur gewählte Faktoren berücksichtigt
-model_rpart_reduziert <- rpart(annahme ~ br.pos + sr.pos +nr.pos+ rechtsform + ja.lager + bet, data = data_train, method = 'class',control=rpart.control(minsplit = 12, minbucket = 10, cp=0.001))
+model_rpart_reduziert <- rpart(annahme ~ br.pos + sr.pos +nr.pos+ rechtsform + ja.lager + bet, data = data_train, method = 'class',control=rpart.control(minsplit = 10, minbucket = 15, cp=0.001))
 rpart.plot(model_rpart_reduziert, extra = "auto")
 
 
