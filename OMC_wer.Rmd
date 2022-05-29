@@ -19,7 +19,7 @@ library(rcompanion)#CramerV
 Danach wird der Datensatz eingelesen: Swissvotes Datensatz sowie unser eigener Datensatz mit den Vorhersagen der Tamedia & SRG
 ```{r Datensätze einlesen}
 df <- read.csv("https://swissvotes.ch/page/dataset/swissvotes_dataset.csv", header=TRUE, sep=";", na = c("NA", "."))
-df_vorhersagen <- read.csv("C:/Users/Antonia/Downloads/Vorhersagen_SRG_Tamedia.csv", header=TRUE, sep=",", na = c("NA", "."))
+df_vorhersagen <- read.csv("C:/Users/Antonia/Documents/GitHub/OMC_wer_FS22/Vorhersagen_SRG_Tamedia.csv", header=TRUE, sep=",", na = c("NA", "."))
 
   
 ```
@@ -138,15 +138,15 @@ brpos <- df_clean %>%
   select(br.pos, annahme) %>% 
   count(br.pos, annahme) %>% 
   mutate(prob = percent(n/sum(n)))
-
-prob_brpos <- brpos[2,4]
+(prob_brpos <- brpos[2,4])
 
 #Wahrscheinlichkeit, dass ein fakultatives Referendum angenommen wird
-prob_FR <- df_clean %>% 
+FR <- df_clean %>% 
   filter(rechtsform == "Fakultatives Referendum") %>% 
   select(rechtsform, annahme) %>% 
   count(rechtsform, annahme) %>% 
   mutate(prob = percent(n/sum(n)))
+(prob_FR <- FR[2,4])
 
 #Wahrscheinlichkeiten, dass eine Abstimmung angenommen wird, wenn die Rechtsform Fakultatives Referendum ist & der BR befürwortet
 FR_BR <- df_clean %>% 
@@ -154,21 +154,21 @@ FR_BR <- df_clean %>%
   select(br.pos, annahme) %>% 
   count(br.pos, annahme) %>% 
   mutate(prob = percent(n/sum(n)))
-prob_FR_BR <- FR_BR[2,4]
+(prob_FR_BR <- FR_BR[2,4])
 
 #Wahrscheinlichkeit, dass eine Vorlage angenommen wurde wenn Tamedia ein "Ja" vorhergesagt hat:
 Tamedia <- df_vorhersagen %>%
   filter(Tamedia == "Annahme") %>% 
   count(Resultat) %>% 
   mutate(prob = percent(n/sum(n)))
-prob_Tamedia <- Tamedia[2,3]
+(prob_Tamedia <- Tamedia[2,3])
 
 #Wahrscheinlichkeit, dass eine Vorlage angenommen wurde wenn SRG ein "Ja" vorhergesagt hat:
 SRG <- df_vorhersagen %>%
   filter(SRG == "Annahme") %>% 
   count(Resultat) %>% 
   mutate(prob = percent(n/sum(n)))
-prob_SRG <- SRG[2,3]
+(prob_SRG <- SRG[2,3])
 
 ```
 
@@ -218,8 +218,10 @@ parteien_frontex <- filter(df_clean, p.svp == "Befürwortend" & p.fdp == "Befür
 (prob_Frontex_parteien <- prob_Vorlagen(parteien_frontex))
 
 ```
-
+Mit all diesen Wahrscheinlichkeiten nach Kriterien können wir nun unser Modell für jede Vorlage erstellen.
+Die Wahrscheinlichkeit, dass eine Vorlage angenommen wird, ergibt sich aus dem Mittelwert aller Wahrscheinlichkeiten:
 ```{r Wahrscheinlichkeitsmodell für jede Vorlage}
+
 Kriterien <- c("Wahrscheinlichkeit nach Rechtsform", 
                "Wahrscheinlichkeit nach Tamedia", 
                "Wahrscheinlichkeit nach SRG", 
@@ -227,29 +229,29 @@ Kriterien <- c("Wahrscheinlichkeit nach Rechtsform",
                "Wahrscheinlichkeit nach Thema", 
                "Wahrscheinlichkeit nach Empfehlung Bundesrat")
 
-Filmgesetz_Modell <- data.frame(Kriterien, P = c(prob_FR_BR, 
+(Filmgesetz_Modell <- data.frame(Kriterien, P = c(prob_FR_BR, 
                                  prob_Tamedia,
                                  prob_SRG,
                                  prob_Filmgesetz_parteien,
                                  prob_Filmgesetz_Thema,
-                                 prob_brpos))
+                                 prob_brpos)))
 
 
 
-Organspende_Modell <- data.frame(Kriterien, P = c(prob_FR_BR, 
+(Organspende_Modell <- data.frame(Kriterien, P = c(prob_FR_BR, 
                                  prob_Tamedia,
                                  prob_SRG,
                                  prob_Organspende_parteien,
                                  prob_Organspende_Thema,
-                                 prob_brpos))
+                                 prob_brpos)))
 
 
-Frontex_Modell <- data.frame(Kriterien, P = c(prob_FR_BR, 
+(Frontex_Modell <- data.frame(Kriterien, P = c(prob_FR_BR, 
                                  prob_Tamedia,
                                  prob_SRG,
                                  prob_Frontex_parteien,
                                  prob_Frontex_Thema,
-                                 prob_brpos))
+                                 prob_brpos)))
 
 
 
