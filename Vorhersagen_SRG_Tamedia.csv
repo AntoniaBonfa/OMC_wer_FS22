@@ -1,21 +1,26 @@
-﻿Name der Abstimmung,Voraussage SRG,Voraussage Tamedia,Vorhersage wahr oder falsch
-Beteiligung an der europäischen Grenz- und Küstenwache Frontex,1,1,WAHR
-Widerspruchsregelung bei der Organspende,1,1,WAHR
-Änderung des Filmgesetzes,1,1,WAHR
-Medienpaket,0,0,WAHR
-Gesetz über die Stempelabgaben,0,0,WAHR
-Initiative «Kinder und Jugendliche ohne Tabakwerbung»,1,1,WAHR
-Initiative für ein Verbot von Tier- und Menschenversuchen,0,0,WAHR
-Änderung des Covid-19-Gesetzes,1,1,WAHR
-Justizinitiative,0,0,WAHR
-Pflegeinitiative,1,1,WAHR
-Ehe für alle,1,1,WAHR
-«99%-Initiative»,1,1,WAHR
-Gesetz über polizeiliche Massnahmen gegen Terrorismus,1,1,WAHR
-CO2-Gesetz,1,1,FALSCH
-Covid-19-Gesetz,1,1,WAHR
-Pestizidinitiative,unentschieden,0,WAHR
-Trinkwasserinitiative,0,0,WAHR
-Freihandelsabkommen mit Indonesien,1,1,WAHR
-Gesetz über elektronische Identifizierungsdienste,0,0,WAHR
-Initiative für ein Verhüllungsverbot,1,1,WAHR
+﻿Titel,SRG,Tamedia,Resultat
+Beteiligung an der europaeischen Grenz- und Kuestenwache Frontex,Annahme,Annahme,Angenommen
+Widerspruchsregelung bei der Organspende,Annahme,Annahme,Angenommen
+Aenderung des Filmgesetzes,Annahme,Annahme,Angenommen
+Medienpaket,Ablehnung,Ablehnung,Abgelehnt
+Gesetz ueber die Stempelabgaben,Ablehnung,Ablehnung,Abgelehnt
+Initiative «Kinder und Jugendliche ohne Tabakwerbung»,Annahme,Annahme,Angenommen
+Initiative fuer ein Verbot von Tier- und Menschenversuchen,Ablehnung,Ablehnung,Abgelehnt
+aenderung des Covid-Annahme9-Gesetzes,Annahme,Annahme,Angenommen
+Justizinitiative,Ablehnung,Ablehnung,Abgelehnt
+Pflegeinitiative,Annahme,Annahme,Angenommen
+Ehe fuer alle,Annahme,Annahme,Angenommen
+«99%-Initiative»,Annahme,Annahme,Angenommen
+Gesetz ueber polizeiliche Massnahmen gegen Terrorismus,Annahme,Annahme,Angenommen
+CO2-Gesetz,Annahme,Annahme,Abgelehnt
+Covid-19-Gesetz,Annahme,Annahme,Angenommen
+Pestizidinitiative,offen,Ablehnung,Abgelehnt
+Trinkwasserinitiative,Ablehnung,Ablehnung,Abgelehnt
+Freihandelsabkommen mit Indonesien,Annahme,Annahme,Angenommen
+Gesetz ueber elektronische Identifizierungsdienste,Ablehnung,Ablehnung,Abgelehnt
+Initiative fuer ein Verhuellungsverbot,Annahme,Annahme,Angenommen
+Initiative «Pro Service public»,offen,offen,Abgelehnt
+Initiative «Fuer ein bedingungsloses Grundeinkommen»,Ablehnung,Ablehnung,Abgelehnt
+Initiative «Fuer eine faire Verkehrsfinanzierung»,Ablehnung,Ablehnung,Abgelehnt
+Fortpflanzungsmedizingesetz,Annahme,Annahme,Angenommen
+Asylgesetz,Annahme,Annahme,Angenommen

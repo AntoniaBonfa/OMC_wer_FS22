@@ -89,55 +89,25 @@ pos_parteien <- names(select(df_clean, starts_with("p.")))
 Abstimmungen_Mai <- df_clean %>%
   filter(datum > as.Date("01.05.2022", "%d.%m.%Y" )) 
 
-
-themen <- c(1.62, 2.22, 4.13, 10.32, 12.53)
-netflix <- c(12.53, 4.13)
-frontex <- c(2.22, 10.32)
-organspende <- c(10.11,1.62)
-
-
-#Abstimmungen mit den selben beiden Themen wie "Lex Netflix" (12.53, 4.13)
-wie_netflix <-
-  df_clean %>% 
-  filter(d1e3 %in% netflix | d2e3 %in% netflix |d3e3 %in% netflix) %>% 
-  mutate(across(names(Thema), 
-           ~ factor(case_when(. == 1.62 ~ "Grundrechte",
-    .== 2.22 ~"Aussenpolitik: EU",
-    .== 4.13 ~"Wirtschaft: Strukturpolitik",
-    .== 10.32 ~"Sozialpolitik: Flüchtlinge",
-    .== 12.53 ~"Medien"))))
-
-#Abstimmungen mit den selben beiden Themen wie Frontex (2.22, 10.32)
-wie_frontex <-
-  df_clean %>% 
-  filter(d1e3 %in% frontex | d2e3 %in% frontex |d3e3 %in% frontex) %>% 
-  mutate(across(names(Thema), 
-           ~ factor(case_when(. == 1.62 ~ "Grundrechte",
-    .== 2.22 ~"Aussenpolitik: EU",
-    .== 4.13 ~"Wirtschaft: Strukturpolitik",
-    .== 10.32 ~"Sozialpolitik: Flüchtlinge",
-    .== 12.53 ~"Medien"))))
-
-#Abstimmungen mit den selben Themen wie die Organspendeinitiative (10.11,1.62)
-wie_organspende <-
-  df_clean %>% 
-  filter(d1e3 %in% organspende | d2e3 %in% organspende |d3e3 %in% organspende) %>% 
-  mutate(across(names(Thema), 
-           ~ factor(case_when(. == 1.62 ~ "Grundrechte",
-    .== 2.22 ~"Aussenpolitik: EU",
-    .== 4.13 ~"Wirtschaft: Strukturpolitik",
-    .== 10.32 ~"Sozialpolitik: Flüchtlinge",
-    .== 12.53 ~"Medien"))))
-
-
 ```
 
-Mittels Kombinatorik wird die Wahrscheinlichkeit gewisser Ereignisse berechnet.
-Dabei möchten wir folgende Faktoren untersuchen:
+Für unser Wahrscheinlichkeitsmodell haben wir folgende Kriterien definiert, die wir untersuchen wollen: 
 Rechtsform (Volksinitiative, Freiwilliges Referendum, Obligatorisches Referendum, Gegenvorschlag)
 Empfehlung des Bundesrats (Befürwortend, ablehnend)
-Haltung des Ständerats (befürwortend, ablehnend)
-Haltung der grössten Parteien (SVP, SP, FDP, Gründe/Mitte, CVP) (befürwortend, ablehnend, Stimmfreigabe, leer, keine)
+Resultate ähnlicher Abstimmungen
+Haltung der grössten Parteien (SVP, SP, FDP, Gründe/Mitte, CVP), wobei wir uns auf befürwortend und  ablehnend beschränkt haben. 
+Vorhersage der Tamedia & SRG
+
+Weitere Kriterien, bei denen wir denken dass sie einen Einfluss auf das Resultat haben, die wir aber nicht berücksichtigt haben sind beispielsweise der Urheber einer Abstimmung und die Medienresonanz. 
+
+Für alle unsere Abstimmungen gilt:
+- Rechtsform = Fakultatives Referendum
+- Haltung des Bundesrats = Befürwortend
+- Vorhersage SRG = Annahme
+- Vorhersage Tamedia = Annahme
+
+Diese Wahrscheinlichkeiten sind also identisch für alle Vorlagen:
+
 
 ```{r Wahrscheinlichkeitsmodell: allgemeine Wahrscheinlichkeiten}
 total_vorlagen <- unlist(df_clean %>% count()) 
@@ -171,20 +141,20 @@ brpos <- df_clean %>%
 
 prob_brpos <- brpos[2,4]
 
-#Wahrscheinlichkeiten, dass eine Abstimmung angenommen wird, wenn die Rechtsform Fakultatives Referendum ist & der BR befürwortet
-FR_BR <- df_clean %>% 
-  filter(br.pos == "Befürwortend", rechtsform == "Fakultatives Referendum") %>% 
-  select(br.pos, annahme) %>% 
-  count(br.pos, annahme) %>% 
-  mutate(prob = percent(n/sum(n)))
-
-prob_FR_BR <- FR_BR[2,4]
 #Wahrscheinlichkeit, dass ein fakultatives Referendum angenommen wird
 prob_FR <- df_clean %>% 
   filter(rechtsform == "Fakultatives Referendum") %>% 
   select(rechtsform, annahme) %>% 
   count(rechtsform, annahme) %>% 
   mutate(prob = percent(n/sum(n)))
+
+#Wahrscheinlichkeiten, dass eine Abstimmung angenommen wird, wenn die Rechtsform Fakultatives Referendum ist & der BR befürwortet
+FR_BR <- df_clean %>% 
+  filter(br.pos == "Befürwortend", rechtsform == "Fakultatives Referendum") %>% 
+  select(br.pos, annahme) %>% 
+  count(br.pos, annahme) %>% 
+  mutate(prob = percent(n/sum(n)))
+prob_FR_BR <- FR_BR[2,4]
 
 #Wahrscheinlichkeit, dass eine Vorlage angenommen wurde wenn Tamedia ein "Ja" vorhergesagt hat:
 Tamedia <- df_vorhersagen %>%
@@ -202,34 +172,50 @@ prob_SRG <- SRG[2,3]
 
 ```
 
-
+Zusätzlich hat jede Vorlage unterschiedliche Wahrscheinlichkeiten für die Themen und für die Haltung der Parteien: 
 ```{r Wahrscheinlichkeit nach Themen}
-#Wahrscheinlichkeiten nach Thema
+#Themen vom Mai anschauen
+select(Abstimmungen_Mai,titel_kurz_d,d1e3,d2e3,d3e3)
+
+#Vektoren mit den Themen pro Vorlage
+filmgesetz_thema <- c(12.53, 4.13)
+organspende_thema <- c(10.11,1.62)
+frontex_thema <- c(2.22, 10.32)
+
+aehnlich_filmgesetz <- filter(df_clean, d1e3 %in% filmgesetz_thema | d2e3 %in% filmgesetz_thema |d3e3 %in% filmgesetz_thema)
+aehnlich_organspende <- filter(df_clean, d1e3 %in% organspende_thema | d2e3 %in% organspende_thema |d3e3 %in% organspende_thema)
+aehnlich_frontex <- filter(df_clean, d1e3 %in% frontex_thema | d2e3 %in% frontex_thema |d3e3 %in% frontex_thema)
+
+#Funktion um Wahrscheinlichkeit zu berechnen
+prob_Vorlagen <- function(Vorlagenfilter){
+  prob_thema <- Vorlagenfilter %>% 
+  count(annahme) %>% 
+  mutate(prob = percent(n/sum(n)) )
+  return (prob_thema[2,3])
+}
+
+#Berechnung Wahrscheinlichkeiten:
+(prob_Filmgesetz_Thema <- prob_Vorlagen(aehnlich_filmgesetz))
+(prob_Organspende_Thema <-prob_Vorlagen(aehnlich_organspende))
+(prob_Frontex_Thema <-prob_Vorlagen(aehnlich_frontex))
 ```
 
 
 ```{r Wahrscheinlichkeiten nach Parteiparolen}
-#Wahrscheinlichkeit, dass eine Vorlage angenommen wird nach Parteiparolen:
+#Tabelle mit Parteipositionen zur Kontrolle:
 Abstimmungen_Mai %>% 
   select(titel_kurz_d, starts_with("p."))
 
-Filmgesetz_parteien <- df_clean %>% 
-  filter(p.svp == "Ablehnend" & p.fdp == "Ablehnend" & p.sps == "Befürwortend" & p.cvp_mitte == "Befürwortend" & p.gps == "Befürwortend" ) %>%     count(annahme) %>% 
-  mutate(prob = percent(n/sum(n)) )
-prob_Filmgesetz_parteien <- Filmgesetz_parteien[2,3]
-         
+parteien_filmgesetz <-  filter(df_clean, p.svp == "Ablehnend" & p.fdp == "Ablehnend" & p.sps == "Befürwortend" & p.cvp_mitte == "Befürwortend" & p.gps == "Befürwortend" )
 
-Organspende_parteien <- df_clean %>% 
-  filter(p.svp == "Ablehnend" & p.fdp == "Befürwortend" & p.sps == "Befürwortend" & p.cvp_mitte == "Befürwortend" & p.gps == "Befürwortend" ) %>%   count(annahme) %>% 
-  mutate(prob = percent(n/sum(n)))
-prob_Organspende_parteien <- Organspende_parteien[2,3]
+parteien_organspende  <-  filter(df_clean, p.svp == "Ablehnend" & p.fdp == "Befürwortend" & p.sps == "Befürwortend" & p.cvp_mitte == "Befürwortend" & p.gps == "Befürwortend")
 
+parteien_frontex <- filter(df_clean, p.svp == "Befürwortend" & p.fdp == "Befürwortend" & p.sps == "Ablehnend" & p.cvp_mitte == "Befürwortend" & p.gps == "Ablehnend")
 
-Frontex_parteien <- df_clean %>% 
-  filter(p.svp == "Befürwortend" & p.fdp == "Befürwortend" & p.sps == "Ablehnend" & p.cvp_mitte == "Befürwortend" & p.gps == "Ablehnend" ) %>%    count(annahme) %>% 
-  mutate(prob = percent(n/sum(n)))
-prob_Frontex_parteien <- Frontex_parteien[2,3]
-
+#einzelne Wahrscheinlichkeiten berechnen
+(prob_Filmgesetz_parteien <- prob_Vorlagen(parteien_filmgesetz))
+(prob_Organspende_parteien <- prob_Vorlagen(parteien_organspende))
+(prob_Frontex_parteien <- prob_Vorlagen(parteien_frontex))
 
 ```
 
@@ -238,34 +224,43 @@ Kriterien <- c("Wahrscheinlichkeit nach Rechtsform",
                "Wahrscheinlichkeit nach Tamedia", 
                "Wahrscheinlichkeit nach SRG", 
                "Wahrscheinlichkeit nach Parteiposition", 
-               #"Wahrscheinlichkeit nach Thema", 
+               "Wahrscheinlichkeit nach Thema", 
                "Wahrscheinlichkeit nach Empfehlung Bundesrat")
 
-Organspende <- data.frame(Kriterien, P = c(prob_FR_BR, 
-                                 prob_Tamedia,
-                                 prob_SRG,
-                                 prob_Organspende_parteien,
-                                 #prob_Organspende_thema,
-                                 prob_brpos))
-(prob_Organspende <- mean(unlist(Organspende["P"])))
-
-
-Filmgesetz <- data.frame(Kriterien, P = c(prob_FR_BR, 
+Filmgesetz_Modell <- data.frame(Kriterien, P = c(prob_FR_BR, 
                                  prob_Tamedia,
                                  prob_SRG,
                                  prob_Filmgesetz_parteien,
-                                 #prob_Organspende_thema,
+                                 prob_Filmgesetz_Thema,
                                  prob_brpos))
-(prob_Filmgesetz <- mean(unlist(Filmgesetz["P"])))
 
 
-Frontex <- data.frame(Kriterien, P = c(prob_FR_BR, 
+
+Organspende_Modell <- data.frame(Kriterien, P = c(prob_FR_BR, 
+                                 prob_Tamedia,
+                                 prob_SRG,
+                                 prob_Organspende_parteien,
+                                 prob_Organspende_Thema,
+                                 prob_brpos))
+
+
+Frontex_Modell <- data.frame(Kriterien, P = c(prob_FR_BR, 
                                  prob_Tamedia,
                                  prob_SRG,
                                  prob_Frontex_parteien,
-                                 #prob_Organspende_thema,
+                                 prob_Frontex_Thema,
                                  prob_brpos))
-(prob_Frontex <- mean(unlist(Frontex["P"])))
+
+
+
+prob_Filmgesetz <- mean(unlist(Filmgesetz_Modell["P"]))
+prob_Organspende <- mean(unlist(Organspende_Modell["P"]))
+prob_Frontex <- mean(unlist(Frontex_Modell["P"]))
+
+percent(prob_Filmgesetz)
+percent(prob_Organspende)
+percent(prob_Frontex)
+
 ```
 
 Anhand unserer Berechnungen wissen wir, wie die Wahrscheinlichkeiten für gewisse Ereignisse sind. Diese müssen wir jetzt mittels Hypothesentest prüfen.
@@ -303,7 +298,8 @@ tibble(resample_mean = bootstraping) %>%
        y = "Anzahl Stichproben") 
 
 ```
-
+Unsere Nullhypothese lautet: die Wahrscheinlichkeit, dass eine Vorlage angenommen wird, ist gleich wie bei den vergangenen Abstimmungen.
+Alternative: die Wahrscheinlichkeit ist höher als durchschnitt 
 ```{r Hypothesentests der einzelnen Vorlagen}
 #Statistische Kennzahlen von einzelnen Variablen ermitteln (Standardabweichung, Mittelwert)
 volk_sd <- sd(df_clean$volkja.proz)
@@ -332,7 +328,7 @@ p_wert(prob_Frontex)
 
 ```
 Zusätzlich zum Hypothesentest für die einzelnen Vorlagen haben wir noch den Einfluss einzelner Variablen mittels Hypothesentest überprüft.
-```{r Funktionen für den Hypothesentest}
+```{r Funktionen definieren für CramerV und Fisher-Test}
 
 hypo_fisher <- function(data){
   fisher <- fisher.test(data)
@@ -383,7 +379,6 @@ df_cramer_3 <- df_clean %>%
 
 hypo_fisher(H3)
 hypo_cramer(H3)
- 
 ```
 
 
@@ -393,16 +388,17 @@ Hypothese 4: die Rechtsform hat keinen Einfluss auf das Abstimmungsresultat (H0)
 
 #für CramerV darf der Datensatz keine NAs enthalten -> bereinigten Datensatz erstellen: 
 df_cramer_4 <- df_clean %>% 
-  drop_na(rechtsform, volk) %>% 
-  mutate(volk = droplevels(volk), rechtsform = droplevels(rechtsform))
+  drop_na(rechtsform, annahme) %>% 
+  mutate(annahme = droplevels(annahme), rechtsform = droplevels(rechtsform))
 
 #Kreuztabelle der Verteilungen
-(H4 <- table(df_cramer_4$rechtsform, df_cramer_4$volk))
+(H4 <- table(df_cramer_4$rechtsform, df_cramer_4$annahme))
 
 #Hypothese überprüfen mittels CramerV & Fishers exact Test (fisher Test zur Sicherheit, da unser Datensatz nicht sehr gross ist)
 hypo_fisher(H4)
 hypo_cramer(H4)
- 
+
+
 ```
 
 
@@ -415,10 +411,6 @@ data_baum <- df_clean %>% select(rechtsform, names(hauptthema), br.pos:nr.pos, s
 data_mai_baum <- Abstimmungen_Mai %>% 
   select(titel_kurz_d, rechtsform, names(hauptthema), br.pos:nr.pos, sr.pos, ja.lager, bet, annahme )
   
-organspende <- data_mai_baum %>%  filter(titel_kurz_d =="Widerspruchsregelung bei der Organspende")
-Frontex <- data_mai_baum %>%  filter(titel_kurz_d == "Beteiligung an der europäischen Grenz- und Küstenwache Frontex") 
-filmgesetz <- data_mai_baum %>%  filter(titel_kurz_d == "Änderung des Filmgesetzes") 
-
 set.seed(1234)
 data_split <- initial_split(data_baum, strata = annahme)
 
@@ -454,6 +446,7 @@ model_br_rechtsform <- tree_specs %>%
 pred_alles <- predict(model_alles, new_data = data_mai_baum) %>% rename(alles = ".pred_class")
 pred_BR_Rechtsform <- predict(model_br_rechtsform, new_data = data_mai_baum) %>%  rename(BR_Rechtsform = ".pred_class")
 pred_BR_JaLager <- predict(model_br_jalager, new_data = data_mai_baum) %>%  rename(BR_JaLager = ".pred_class")
+
 
 #Zusammengefügt in einem Dataframe:
 (vorhersagen <- cbind(data_mai_baum,pred_alles, pred_BR_Rechtsform, pred_BR_JaLager)  %>% 
