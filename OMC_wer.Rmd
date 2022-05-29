@@ -18,6 +18,7 @@ library(rcompanion)#CramerV
 
 Danach wird der Datensatz eingelesen: Swissvotes Datensatz sowie unser eigener Datensatz mit den Vorhersagen der Tamedia & SRG
 ```{r Datensätze einlesen}
+
 df <- read.csv("https://swissvotes.ch/page/dataset/swissvotes_dataset.csv", header=TRUE, sep=";", na = c("NA", "."))
 df_vorhersagen <- read.csv("C:/Users/Antonia/Documents/GitHub/OMC_wer_FS22/Vorhersagen_SRG_Tamedia.csv", header=TRUE, sep=",", na = c("NA", "."))
 
@@ -26,6 +27,7 @@ df_vorhersagen <- read.csv("C:/Users/Antonia/Documents/GitHub/OMC_wer_FS22/Vorhe
 
 Im nächsten Schritt werden die Daten bereinigt, so dass wir einen Datensatz erhalten mit dem wir arbeiten können. 
 ```{r Data Wrangling}
+
 #Variablen definieren um nachher mehrere Spalten gleichzeitig zu mutieren
 parteien <- c(".svp", ".fdp", ".sps", ".cvp", ".gps", ".mitte")
 
@@ -85,6 +87,7 @@ pos_parteien <- names(select(df_clean, starts_with("p.")))
 
 
 ```{r Datensätze für die Abstimmungen im Mai}
+
 #Abstimmungen vom Mai herausfiltern
 Abstimmungen_Mai <- df_clean %>%
   filter(datum > as.Date("01.05.2022", "%d.%m.%Y" )) 
@@ -110,6 +113,7 @@ Diese Wahrscheinlichkeiten sind also identisch für alle Vorlagen:
 
 
 ```{r Wahrscheinlichkeitsmodell: allgemeine Wahrscheinlichkeiten}
+
 total_vorlagen <- unlist(df_clean %>% count()) 
 n_angenommen <-unlist(df_clean %>% filter(annahme == "angenommen") %>% count()) 
 n_abgelehnt <- total_vorlagen - n_angenommen
@@ -156,20 +160,33 @@ FR_BR <- df_clean %>%
   mutate(prob = percent(n/sum(n)))
 (prob_FR_BR <- FR_BR[2,4])
 
-#Wahrscheinlichkeit, dass eine Vorlage angenommen wurde wenn Tamedia ein "Ja" vorhergesagt hat:
-Tamedia <- df_vorhersagen %>%
+#Wahrscheinlichkeit, dass Vorhersage der Tamedia korrekt ist:
+
+Tamedia_ja <- df_vorhersagen %>%
   filter(Tamedia == "Annahme") %>% 
   count(Resultat) %>% 
   mutate(prob = percent(n/sum(n)))
-(prob_Tamedia <- Tamedia[2,3])
 
-#Wahrscheinlichkeit, dass eine Vorlage angenommen wurde wenn SRG ein "Ja" vorhergesagt hat:
-SRG <- df_vorhersagen %>%
+Tamedia_nein <- df_vorhersagen %>%
+  filter(Tamedia == "Ablehnung") %>% 
+  count(Resultat) %>% 
+  mutate(prob = percent(n/sum(n)))
+
+(prob_Tamedia <- Tamedia_ja[2,3]*Tamedia_nein[1,3])
+
+#Wahrscheinlichkeit, dass Vorhersage der SRG korrekt ist:
+
+SRG_ja <- df_vorhersagen %>%
   filter(SRG == "Annahme") %>% 
   count(Resultat) %>% 
   mutate(prob = percent(n/sum(n)))
-(prob_SRG <- SRG[2,3])
 
+SRG_nein <- df_vorhersagen %>%
+  filter(SRG == "Ablehnung") %>% 
+  count(Resultat) %>% 
+  mutate(prob = percent(n/sum(n)))
+
+(prob_SRG <- SRG_ja[2,3]*SRG_nein[1,3])
 ```
 
 Zusätzlich hat jede Vorlage unterschiedliche Wahrscheinlichkeiten für die Themen und für die Haltung der Parteien: 
@@ -202,6 +219,7 @@ prob_Vorlagen <- function(Vorlagenfilter){
 
 
 ```{r Wahrscheinlichkeiten nach Parteiparolen}
+
 #Tabelle mit Parteipositionen zur Kontrolle:
 Abstimmungen_Mai %>% 
   select(titel_kurz_d, starts_with("p."))
@@ -220,6 +238,7 @@ parteien_frontex <- filter(df_clean, p.svp == "Befürwortend" & p.fdp == "Befür
 ```
 Mit all diesen Wahrscheinlichkeiten nach Kriterien können wir nun unser Modell für jede Vorlage erstellen.
 Die Wahrscheinlichkeit, dass eine Vorlage angenommen wird, ergibt sich aus dem Mittelwert aller Wahrscheinlichkeiten:
+Für Tamedia & SRG wurden die Vorhersagewerte gem. zweiter Umfragewelle genommen, da die Wahrscheinlichkeit, dass die Vorhersage korrekt ist mit 93,3% (für die Umfragen die wir geprüft haben) recht hoch ist. 
 ```{r Wahrscheinlichkeitsmodell für jede Vorlage}
 
 Kriterien <- c("Wahrscheinlichkeit nach Rechtsform", 
@@ -229,9 +248,11 @@ Kriterien <- c("Wahrscheinlichkeit nach Rechtsform",
                "Wahrscheinlichkeit nach Thema", 
                "Wahrscheinlichkeit nach Empfehlung Bundesrat")
 
+
+
 (Filmgesetz_Modell <- data.frame(Kriterien, P = c(prob_FR_BR, 
-                                 prob_Tamedia,
-                                 prob_SRG,
+                                 prob_Tamedia = 0.52,
+                                 prob_SRG = 0.59,
                                  prob_Filmgesetz_parteien,
                                  prob_Filmgesetz_Thema,
                                  prob_brpos)))
@@ -239,16 +260,16 @@ Kriterien <- c("Wahrscheinlichkeit nach Rechtsform",
 
 
 (Organspende_Modell <- data.frame(Kriterien, P = c(prob_FR_BR, 
-                                 prob_Tamedia,
-                                 prob_SRG,
+                                 prob_Tamedia = 0.56,
+                                 prob_SRG = 0.63,
                                  prob_Organspende_parteien,
                                  prob_Organspende_Thema,
                                  prob_brpos)))
 
 
 (Frontex_Modell <- data.frame(Kriterien, P = c(prob_FR_BR, 
-                                 prob_Tamedia,
-                                 prob_SRG,
+                                 prob_Tamedia = 0.56,
+                                 prob_SRG = 0.63,
                                  prob_Frontex_parteien,
                                  prob_Frontex_Thema,
                                  prob_brpos)))
@@ -259,14 +280,15 @@ prob_Filmgesetz <- mean(unlist(Filmgesetz_Modell["P"]))
 prob_Organspende <- mean(unlist(Organspende_Modell["P"]))
 prob_Frontex <- mean(unlist(Frontex_Modell["P"]))
 
-percent(prob_Filmgesetz)
-percent(prob_Organspende)
-percent(prob_Frontex)
+paste("Wahrscheinlichkeit, dass Filmgesetz angenommen wird:", percent(prob_Filmgesetz))
+paste("Wahrscheinlichkeit, dass Transplantationsgesetz angenommen wird:", percent(prob_Organspende))
+paste("Wahrscheinlichkeit, dass Frontex angenommen wird:", percent(prob_Frontex))
 
 ```
 
 Anhand unserer Berechnungen wissen wir, wie die Wahrscheinlichkeiten für gewisse Ereignisse sind. Diese müssen wir jetzt mittels Hypothesentest prüfen.
 ```{r Verteilung der Daten prüfen}
+
 #Histogram zur Prüfung, wie die Daten verteilt sind
 ggplot(df_clean, aes(volkja.proz)) +
   geom_histogram(bins = 25)+
@@ -303,6 +325,7 @@ tibble(resample_mean = bootstraping) %>%
 Unsere Nullhypothese lautet: die Wahrscheinlichkeit, dass eine Vorlage angenommen wird, ist gleich wie bei den vergangenen Abstimmungen.
 Alternative: die Wahrscheinlichkeit ist höher als durchschnitt 
 ```{r Hypothesentests der einzelnen Vorlagen}
+
 #Statistische Kennzahlen von einzelnen Variablen ermitteln (Standardabweichung, Mittelwert)
 volk_sd <- sd(df_clean$volkja.proz)
 volk_mean <- mean(df_clean$volkja.proz)
@@ -359,6 +382,7 @@ hypo_fisher(H1)
 ```
 Hypothese 2: Aus der Vorhersage der SRG kann nicht auf das Resultat geschlossen werden (H0) / kann das Resultat vorhergesagt werden (Ha)}
 ```{r Hypothese 2: Vorhersage SRG} 
+
 #Kreuztabelle Verteilung
 (H2 <- table(df_vorhersagen$SRG, df_vorhersagen$Resultat))
 
@@ -405,7 +429,7 @@ hypo_cramer(H4)
 
 
 Als zusätzlichen Schritt haben wir versucht, einen Entscheidungsbaum zu erstellen, der das Resultat ebenfalls vorhersagt. 
-```{r Entscheidungsbaum} 
+```{r Entscheidungsbaum Set-up} 
 
 #reduzierter Datensatz für Baum (Entfernung Resultatvariablen wie Volk, Kanton, Resultate pro Kanton etc):
 data_baum <- df_clean %>% select(rechtsform, names(hauptthema), br.pos:nr.pos, sr.pos, ja.lager, bet, annahme )
@@ -442,7 +466,17 @@ model_br_jalager <- tree_specs %>%
 
 #Model nur mit Rechtsform & Bundesratsempfehlung
 model_br_rechtsform <- tree_specs %>% 
-          fit(formula = annahme ~ rechtsform + br.pos, data = data_train) 
+          fit(formula = annahme ~ rechtsform + br.pos, data = data_train)
+```
+
+
+Wir haben für den Baum verschiedene Modelle errechnet, welche die Vorhersagen berechnen:
+Model 1: alle Variablen
+Model 2: nur Rechtsform und Position des Bundesrates
+Model 3: Nur Position des Bundesrates und die Grösse des Ja-Lagers
+
+Model 1 und Model 3 sagen vorher, dass das Filmgesetz abgelehnt wird, während Model 2 für alle Vorlagen eine Annahme vorhersieht. 
+```{r Entscheidungsbaum Vorhersagen / Modell} 
 
 #Vorhersagen für Mai gem. obiger Modelle
 pred_alles <- predict(model_alles, new_data = data_mai_baum) %>% rename(alles = ".pred_class")
@@ -451,10 +485,10 @@ pred_BR_JaLager <- predict(model_br_jalager, new_data = data_mai_baum) %>%  rena
 
 
 #Zusammengefügt in einem Dataframe:
-(vorhersagen <- cbind(data_mai_baum,pred_alles, pred_BR_Rechtsform, pred_BR_JaLager)  %>% 
-  select(-c(nr.pos, sr.pos, bv.pos)) %>% 
-  rename(Titel = titel_kurz_d))
+vorhersagen <- cbind(data_mai_baum,pred_alles, pred_BR_Rechtsform, pred_BR_JaLager)  %>% 
+  rename(Titel = titel_kurz_d)
 
+select(vorhersagen, Titel, alles, BR_Rechtsform, BR_JaLager)
 
 #Entscheidungsbaum nur mit rpart (Model musste dazu neu erstellt werden da rpart nicht kompatibel mit anderer Library)
 
