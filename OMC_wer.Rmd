@@ -24,8 +24,8 @@ df_vorhersagen <- read.csv("C:/Users/Antonia/Documents/GitHub/OMC_wer_FS22/Vorhe
 
   
 ```
-
-Im nächsten Schritt werden die Daten bereinigt, so dass wir einen Datensatz erhalten mit dem wir arbeiten können. 
+Unsere Fragestellung lautet: Wie wahrscheinlich ist es, dass die drei Initiativen vom 15. Mai 2022 angenommen werden. 
+Im nächsten Schritt werden die Daten bereinigt, so dass wir einen Datensatz erhalten, mit dem wir arbeiten können. 
 ```{r Data Wrangling}
 
 #Variablen definieren um nachher mehrere Spalten gleichzeitig zu mutieren
@@ -95,15 +95,11 @@ Abstimmungen_Mai <- df_clean %>%
 ```
 
 Für unser Wahrscheinlichkeitsmodell haben wir folgende Kriterien definiert, die wir untersuchen wollen: 
-Rechtsform (Volksinitiative, Freiwilliges Referendum, Obligatorisches Referendum, Gegenvorschlag)
-Empfehlung des Bundesrats (Befürwortend, ablehnend)
-Resultate ähnlicher Abstimmungen
-Haltung der grössten Parteien (SVP, SP, FDP, Gründe/Mitte, CVP), wobei wir uns auf befürwortend und  ablehnend beschränkt haben. 
-Vorhersage der Tamedia & SRG
+Rechtsform (Volksinitiative, fakultatives und obligatorisches Referendum, Gegenvorschlag zur Volksinitiative). Dazu kommt die Haltung des Bundesrats (befürwortend, ablehnend)sowie die Resultate ähnlicher Abstimmungen. Ebenfalls angeschaut wird die Haltung der grössten Parteien (SVP, SP, FDP, Gründe/Mitte, CVP), wobei wir uns auf befürwortend und  ablehnend beschränkt haben. Ausserdem schauen wir uns die letzten Umfragewellen der Tamedia und der SRG an und bestimmen, wie korrekt sie mit ihren Vorhersagen sind. 
 
-Weitere Kriterien, bei denen wir denken dass sie einen Einfluss auf das Resultat haben, die wir aber nicht berücksichtigt haben sind beispielsweise der Urheber einer Abstimmung und die Medienresonanz. 
+Weitere Kriterien, bei denen wir denken dass sie einen Einfluss auf das Resultat haben, die wir aber nicht berücksichtigt haben, sind beispielsweise der Urheber einer Abstimmung und die Medienresonanz. Wir haben sie nicht berücksichtigt, weil die Medienresonanz oft im Nachhinein bestimmt wird und wir schlicht und einfach nicht alles anschauen können. 
 
-Für alle unsere Abstimmungen gilt:
+Für alle drei Abstimmungen, die wir uns genauer anschauen, gilt:
 - Rechtsform = Fakultatives Referendum
 - Haltung des Bundesrats = Befürwortend
 - Vorhersage SRG = Annahme
@@ -189,7 +185,7 @@ SRG_nein <- df_vorhersagen %>%
 (prob_SRG <- SRG_ja[2,3]*SRG_nein[1,3])
 ```
 
-Zusätzlich hat jede Vorlage unterschiedliche Wahrscheinlichkeiten für die Themen und für die Haltung der Parteien: 
+Zusätzlich hat jede Vorlage unterschiedliche Wahrscheinlichkeiten für die Themen der Parteien: 
 ```{r Wahrscheinlichkeit nach Themen}
 #Themen vom Mai anschauen
 select(Abstimmungen_Mai,titel_kurz_d,d1e3,d2e3,d3e3)
@@ -217,7 +213,7 @@ prob_Vorlagen <- function(Vorlagenfilter){
 (prob_Frontex_Thema <-prob_Vorlagen(aehnlich_frontex))
 ```
 
-
+Und für jede Initiative gibt es die Haltung der Parteien. 
 ```{r Wahrscheinlichkeiten nach Parteiparolen}
 
 #Tabelle mit Parteipositionen zur Kontrolle:
@@ -238,7 +234,7 @@ parteien_frontex <- filter(df_clean, p.svp == "Befürwortend" & p.fdp == "Befür
 ```
 Mit all diesen Wahrscheinlichkeiten nach Kriterien können wir nun unser Modell für jede Vorlage erstellen.
 Die Wahrscheinlichkeit, dass eine Vorlage angenommen wird, ergibt sich aus dem Mittelwert aller Wahrscheinlichkeiten:
-Für Tamedia & SRG wurden die Vorhersagewerte gem. zweiter Umfragewelle genommen, da die Wahrscheinlichkeit, dass die Vorhersage korrekt ist mit 93,3% (für die Umfragen die wir geprüft haben) recht hoch ist. 
+Für Tamedia & SRG wurden die Vorhersagewerte gemäss letzter Umfragewelle genommen, da die Wahrscheinlichkeit, dass die Vorhersage korrekt ist mit 93,3% (für die Umfragen die wir geprüft haben) recht hoch ist. 
 ```{r Wahrscheinlichkeitsmodell für jede Vorlage}
 
 Kriterien <- c("Wahrscheinlichkeit nach Rechtsform", 
@@ -286,7 +282,9 @@ paste("Wahrscheinlichkeit, dass Frontex angenommen wird:", percent(prob_Frontex)
 
 ```
 
-Anhand unserer Berechnungen wissen wir, wie die Wahrscheinlichkeiten für gewisse Ereignisse sind. Diese müssen wir jetzt mittels Hypothesentest prüfen.
+Anhand unserer Berechnungen wissen wir, wie die Wahrscheinlichkeiten für gewisse Ereignisse sind. Diese müssen wir jetzt mittels Hypothesentest prüfen.Um zu prüfen, ob wir aus unseren beobachteten Werten schliessen dürfen, dass eine Vorlage angenommen wird, führen wir einen Hypothesentest für jedes Modell durch. Da unsere Alternativhypothese lautet, dass die Wahrscheinlichkeiten unserer Vorlagen grösser ist, als die durchschnittliche Wahrscheinlichkeit einer Annahme, wenden wir einen rechtsseitigen Test an. Als Signifikationsniveau Alpha wählen wir 5 Prozent. 
+Zuerst ermitteln wir die Standartabweichung der Basiswahrscheinlichkeit, also die Annahme einer Vorlage, und die Standartabweichung, also die Ablehnung einer Vorlage. Von diesen beiden ziehen wir dann die Quadratwurzel, um die Standartabweichung allgemein zu erhalten. 
+Danach berechnen wir den P-Wert, indem wir zuerst den Z-Wert für jede Vorlage berechnen und diesen in die P-Norm-Funktion eingeben. 
 ```{r Verteilung der Daten prüfen}
 
 #Histogram zur Prüfung, wie die Daten verteilt sind
@@ -323,7 +321,7 @@ tibble(resample_mean = bootstraping) %>%
 
 ```
 Unsere Nullhypothese lautet: die Wahrscheinlichkeit, dass eine Vorlage angenommen wird, ist gleich wie bei den vergangenen Abstimmungen.
-Alternative: die Wahrscheinlichkeit ist höher als durchschnitt 
+Alternative: die Wahrscheinlichkeit ist höher als dieser Durchschnitt. 
 ```{r Hypothesentests der einzelnen Vorlagen}
 
 #Statistische Kennzahlen von einzelnen Variablen ermitteln (Standardabweichung, Mittelwert)
@@ -426,6 +424,9 @@ hypo_cramer(H4)
 
 
 ```
+Die Resultate für alle drei Vorlagen sind kleiner als unser Signifikanzniveau, weswegen wir die Nullhypothese für alle drei Vorlagen verwerfen können. 
+Zusätzlich haben wir noch einen Hypothesentest für einzelne Kriterien durchgeführt. Da diese Daten alle kategorisch sind, haben wir jeweils einen CramerV-Test und einen Fishers exact Test for counted data durchgeführt. Dafür haben wir jeweils Kreuztabellen gebildet mit den Kriterien und der Zielvariable. 
+Bei allen getesteten Kriterien war das Resultat aus dem Fisher Test deutlich geringer als unser Signifikanzniveau, weswegen wir für alle die Nullhypothese verwerfen können. Denn der CramerV Wert kann jeweils einen Wert von 0 bis 1 annehmen, wobei wie bei der Korrelation gilt, je näher der Wert zu 1, desto höher die Abhängigkeit. Bei den getesteten Kriterien war der Wert jeweils um 0.5, was einer mittleren Abhängigkeit entspricht. 
 
 
 Als zusätzlichen Schritt haben wir versucht, einen Entscheidungsbaum zu erstellen, der das Resultat ebenfalls vorhersagt. 
@@ -502,11 +503,3 @@ rpart.plot(model_rpart_reduziert, extra = "auto")
 
 
 ```
-
-
-
-
-
-
-
-1
